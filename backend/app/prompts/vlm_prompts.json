@@ -1,0 +1,26 @@
+{
+  "dish_description": {
+    "template": [
+      "Analyze this food image{title_line}.",
+      "",
+      "Provide:",
+      "1. A detailed description of the dish",
+      "2. The type of dish (e.g., pasta, salad, soup, stir-fry, etc.)",
+      "3. List of likely main ingredients (5-10 items)",
+      "4. Cuisine type if recognizable (e.g., Italian, Asian, Mexican, etc.)",
+      "",
+      "Format your response as JSON:",
+      "{{",
+      "  \"description\": \"detailed description\",",
+      "  \"dish_type\": \"type\",",
+      "  \"guessed_ingredients\": [\"ingredient1\", \"ingredient2\"],",
+      "  \"cuisine\": \"cuisine or unknown\"",
+      "}}",
+      "",
+      "Return ONLY the JSON:"
+    ],
+    "title_line_template": [
+      " (user says: {title})"
+    ]
+  }
+}

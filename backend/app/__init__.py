@@ -1,0 +1,1 @@
+"""Food Assistant API application."""
