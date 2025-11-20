@@ -147,25 +147,97 @@
   },
   "menu_constraint_parser": {
     "system": [
-      "Parse menu planning requests in ANY language. Extract which days, meals, and dietary restrictions the user wants.",
+      "Parse menu planning requests in ANY language. Extract which days, meals, dietary restrictions, time constraints, calorie limits, and other preferences the user wants.",
       "Return ONLY valid JSON with this structure:",
-      "{{\"days\": [\"Monday\", \"Tuesday\", ...], \"meals\": [\"breakfast\", \"lunch\", \"dinner\"], \"dietary\": [\"vegan\", \"gluten-free\", ...]}}",
+      "{{\"days\": [\"Monday\", \"Tuesday\", ...], \"meals\": [\"breakfast\", \"lunch\", \"dinner\"], \"dietary\": [\"vegan\", \"gluten-free\", ...], \"max_time_minutes\": 30 or null, \"max_calories\": 500 or null, \"other_preferences\": \"additional constraints\"}}",
       "",
       "Rules:",
       "- days: Use English day names. For \"weekday/weekdays/work week/de lunes a viernes\" use Monday-Friday. For \"weekend/fin de semana\" use Saturday-Sunday. Default: all 7 days.",
       "- meals: Always use English: \"breakfast\", \"lunch\", \"dinner\". Recognize variations in any language (desayuno, petit-déjeuner, etc.). Default: all 3 meals.",
       "- dietary: Recognize restrictions in any language: vegan/végétalien/vegano, vegetarian/végétarien/vegetariano, gluten-free/sin gluten/sans gluten, low-carb/keto/bajo en carbohidratos, high-protein/alta en proteína, dairy-free/sin lácteos, nut-free/sin nueces, halal, kosher, etc.",
+      "- max_time_minutes: Extract maximum cooking time in minutes. Recognize phrases like \"quick\", \"under 30 minutes\", \"less than 45 min\", \"rápido\", \"moins de 20 minutes\". Default: null.",
+      "- max_calories: Extract maximum calories per serving. Recognize phrases like \"low calorie\", \"bajo en calorías\", \"faible en calories\", \"under 400 calories\". Default: null.",
+      "- other_preferences: Any additional constraints or preferences mentioned by the user.",
       "",
       "Examples:",
-      "\"Plan vegan meals for Monday to Friday\" → {{\"days\":[\"Monday\",\"Tuesday\",\"Wednesday\",\"Thursday\",\"Friday\"],\"meals\":[\"breakfast\",\"lunch\",\"dinner\"],\"dietary\":[\"vegan\"]}}",
-      "\"Menú vegetariano de desayuno y cena\" → {{\"days\":[\"Monday\",\"Tuesday\",\"Wednesday\",\"Thursday\",\"Friday\",\"Saturday\",\"Sunday\"],\"meals\":[\"breakfast\",\"dinner\"],\"dietary\":[\"vegetarian\"]}}",
-      "\"Plan de repas sans gluten pour le week-end\" → {{\"days\":[\"Saturday\",\"Sunday\"],\"meals\":[\"breakfast\",\"lunch\",\"dinner\"],\"dietary\":[\"gluten-free\"]}}",
-      "\"Make dinners Monday to Friday\" → {{\"days\":[\"Monday\",\"Tuesday\",\"Wednesday\",\"Thursday\",\"Friday\"],\"meals\":[\"dinner\"],\"dietary\":[]}}"
+      "\"Plan vegan meals for Monday to Friday\" → {{\"days\":[\"Monday\",\"Tuesday\",\"Wednesday\",\"Thursday\",\"Friday\"],\"meals\":[\"breakfast\",\"lunch\",\"dinner\"],\"dietary\":[\"vegan\"],\"max_time_minutes\":null,\"max_calories\":null,\"other_preferences\":\"\"}}",
+      "\"Quick dinners under 30 minutes for the week\" → {{\"days\":[\"Monday\",\"Tuesday\",\"Wednesday\",\"Thursday\",\"Friday\",\"Saturday\",\"Sunday\"],\"meals\":[\"dinner\"],\"dietary\":[],\"max_time_minutes\":30,\"max_calories\":null,\"other_preferences\":\"\"}}",
+      "\"Menú vegetariano de desayuno y cena menos de 45 minutos\" → {{\"days\":[\"Monday\",\"Tuesday\",\"Wednesday\",\"Thursday\",\"Friday\",\"Saturday\",\"Sunday\"],\"meals\":[\"breakfast\",\"dinner\"],\"dietary\":[\"vegetarian\"],\"max_time_minutes\":45,\"max_calories\":null,\"other_preferences\":\"\"}}",
+      "\"Low calorie lunches for weekdays under 400 calories\" → {{\"days\":[\"Monday\",\"Tuesday\",\"Wednesday\",\"Thursday\",\"Friday\"],\"meals\":[\"lunch\"],\"dietary\":[],\"max_time_minutes\":null,\"max_calories\":400,\"other_preferences\":\"low calorie\"}}"
     ],
     "user_template": [
       "User request: {user_message}",
       "",
       "Return ONLY the JSON object:"
+    ]
+  },
+  "recipe_constraint_parser": {
+    "system": [
+      "Analyze a recipe search query and extract specific constraints including dietary preferences, time limits, and calorie restrictions.",
+      "Return ONLY valid JSON with this structure:",
+      "{{\"dietary\": [\"vegetarian\", ...], \"max_time_minutes\": number or null, \"max_calories\": number or null}}",
+      "",
+      "Rules:",
+      "- dietary: List of dietary restrictions or preferences (vegetarian, vegan, gluten-free, dairy-free, etc.). Empty array if none.",
+      "- max_time_minutes: Maximum cooking time in minutes extracted from the query. Recognize phrases like:",
+      "  * \"quick recipes\" → 30",
+      "  * \"recipes under 30 minutes\" → 30",
+      "  * \"less than 45 min\" → 45",
+      "  * \"recipes in 20 minutes\" → 20",
+      "  * \"fast dinner\" → 30",
+      "  * \"rápido\" → 30",
+      "  * \"moins de 20 minutes\" → 20",
+      "  Set to null if no time constraint mentioned.",
+      "- max_calories: Maximum calories per serving. Recognize phrases like:",
+      "  * \"low calorie\" → 400",
+      "  * \"under 500 calories\" → 500",
+      "  * \"healthy\" → 500",
+      "  * \"light meals\" → 400",
+      "  Set to null if no calorie constraint mentioned.",
+      "",
+      "Examples:",
+      "\"quick dinner recipes\" → {{\"dietary\":[],\"max_time_minutes\":30,\"max_calories\":null}}",
+      "\"recipes under 30 minutes\" → {{\"dietary\":[],\"max_time_minutes\":30,\"max_calories\":null}}",
+      "\"vegetarian meals less than 45 min\" → {{\"dietary\":[\"vegetarian\"],\"max_time_minutes\":45,\"max_calories\":null}}",
+      "\"low calorie breakfast under 20 minutes\" → {{\"dietary\":[],\"max_time_minutes\":20,\"max_calories\":400}}",
+      "\"healthy vegan recipes\" → {{\"dietary\":[\"vegan\"],\"max_time_minutes\":null,\"max_calories\":500}}",
+      "\"pasta recipes\" → {{\"dietary\":[],\"max_time_minutes\":null,\"max_calories\":null}}"
+    ],
+    "user_template": [
+      "Recipe search query: \"{user_query}\"",
+      "",
+      "Return ONLY the JSON object:"
+    ]
+  },
+  "recipe_modification": {
+    "system": [
+      "You are a recipe modification assistant. Modify the provided recipe based on the user's request.",
+      "Return ONLY valid JSON with this exact structure:",
+      "{{",
+      "  \"name\": \"Modified Recipe Name\",",
+      "  \"description\": \"What was changed in this modification\",",
+      "  \"servings\": 4,",
+      "  \"total_time_minutes\": 30,",
+      "  \"ingredients\": [{{\"name\": \"ingredient name\", \"quantity\": 1.0, \"unit\": \"cup\"}}],",
+      "  \"steps\": [{{\"step_number\": 1, \"instruction\": \"Step instruction\"}}],",
+      "  \"explanation\": \"Brief Markdown-formatted summary of changes made\"",
+      "}}",
+      "",
+      "Rules:",
+      "- Keep the same structure as the original recipe",
+      "- Update ingredients and steps as needed based on the modification request",
+      "- Provide a clear explanation of what was changed in the 'explanation' field",
+      "- The 'explanation' field should use **Markdown formatting** with **bold** for recipe names and key changes",
+      "- Adjust cooking time if the modification affects it",
+      "- All ingredient names and units must be in English"
+    ],
+    "user_template": [
+      "Original recipe:",
+      "{original_recipe}",
+      "",
+      "User's modification request: \"{user_request}\"",
+      "",
+      "Return the modified recipe as JSON:"
     ]
   },
   "menu_modification_parser": {

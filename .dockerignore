@@ -1,0 +1,57 @@
+# Git
+.git/
+.gitignore
+.gitattributes
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# Documentation
+*.md
+docs/
+
+# CI/CD
+.github/
+.gitlab-ci.yml
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Scripts
+setup.sh
+start.sh
+*.sh
+
+# Node
+frontend/node_modules/
+frontend/.next/
+frontend/out/
+
+# Python
+backend/__pycache__/
+backend/**/__pycache__/
+backend/venv/
+backend/*.pyc
+backend/.pytest_cache/
+
+# Data (optional - uncomment if you want to exclude from context)
+# backend/foodify.db
+# backend/chroma_db/
+# data/
+
+# Environment
+.env
+.env.*
+!.env.example
+
+# Logs
+*.log
+
+# Tests
+backend/tests/
+frontend/tests/

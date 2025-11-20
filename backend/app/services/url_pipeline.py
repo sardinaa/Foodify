@@ -8,9 +8,10 @@ from sqlalchemy.orm import Session
 import httpx
 
 from app.core.config import get_settings
+from app.core.constants import HTTPConstants, LimitsConstants
 from app.core.llm_client import get_llm_client
 from app.db.schema import Recipe, NutritionSummary
-from app.services.recipe_service import create_recipe_with_nutrition
+from app.services.ingestion.base import persist_generated_recipe
 from app.utils.text_cleaning import (
     extract_url_content,
     is_social_media_url,
@@ -63,26 +64,13 @@ async def fetch_url_content(url: str) -> dict:
     
     # Use httpx with multiple user agents for better compatibility
     # httpx automatically handles compression (gzip, deflate, br) if dependencies are installed
-    user_agents = [
-        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
-        "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
-        "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
-    ]
-    
-    headers_base = {
-        "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
-        "Accept-Language": "en-US,en;q=0.9,es;q=0.8",
-        "Accept-Encoding": "gzip, deflate, br",
-        "DNT": "1",
-        "Connection": "keep-alive",
-        "Upgrade-Insecure-Requests": "1",
-        "Referer": "https://www.google.com/"
-    }
-    
-    for user_agent in user_agents:
+    for user_agent in HTTPConstants.USER_AGENTS:
         try:
-            headers = {**headers_base, "User-Agent": user_agent}
-            async with httpx.AsyncClient(timeout=30.0, follow_redirects=True) as client:
+            headers = HTTPConstants.get_headers_with_user_agent(user_agent)
+            async with httpx.AsyncClient(
+                timeout=LimitsConstants.HTTP_TIMEOUT_SECONDS,
+                follow_redirects=True
+            ) as client:
                 response = await client.get(url, headers=headers)
                 
                 print(f"  Response status: {response.status_code}, encoding: {response.encoding}")
@@ -94,7 +82,7 @@ async def fetch_url_content(url: str) -> dict:
                     
                     print(f"  HTML length: {len(html_content)}")
                     
-                    if len(html_content) > 500:
+                    if len(html_content) > LimitsConstants.HTTP_MAX_CONTENT_LENGTH:
                         print(f"✓ httpx: Extracted {len(html_content)} chars from URL")
                         return extract_url_content(url, html_content)
                         
@@ -179,31 +167,27 @@ async def analyze_url_pipeline(
             print(f"📝 Content preview: {content_data['content'][:200]}...")
             recipe_base = await llm.generate_recipe_from_text(content_data['content'])
         
+        # Validate that we got a valid recipe with ingredients
+        if not recipe_base.ingredients or len(recipe_base.ingredients) == 0:
+            raise ValueError(
+                "Failed to extract recipe. No ingredients found in the content. "
+                "The platform may be blocking access or the content doesn't contain a recipe. "
+                "Try copying the recipe text and using the Chat feature instead!"
+            )
+        
         print(f"✓ Recipe extracted: {recipe_base.name}")
         
-        # Step 3: Generate tags
-        print("🏷️  Generating tags...")
-        dish_name, tags = await llm.normalize_dish_name_and_tags(
-            recipe_base.description or recipe_base.name,
-            recipe_base.name
-        )
-        
-        # Update recipe name if better one found
-        if dish_name and dish_name != "Unknown Dish":
-            recipe_base.name = dish_name
-        
-        print(f"✓ Tags generated: {tags}")
-        
-        # Step 4 & 5: Calculate nutrition and save
-        print("🥗 Calculating nutrition and saving...")
-        recipe, nutrition = create_recipe_with_nutrition(
+        # Step 3-5: Generate tags, calculate nutrition, and save
+        print("🏷️  Generating tags and saving recipe...")
+        recipe, nutrition, tags = await persist_generated_recipe(
             db,
+            llm,
             recipe_base,
             source_type="url",
             source_ref=url,
-            tags=tags
+            tag_context=recipe_base.description or recipe_base.name,
         )
-        
+
         print(f"✅ Recipe saved with ID: {recipe.id}")
         return recipe, nutrition, tags
         

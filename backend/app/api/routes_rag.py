@@ -51,16 +51,24 @@ class IngredientSearchRequest(BaseModel):
 
 
 @router.post("/recommend", response_model=RecipeRecommendationResponse)
-async def get_recipe_recommendations(request: RecipeRecommendationRequest):
+async def get_recipe_recommendations(
+    request: RecipeRecommendationRequest,
+    db: Session = Depends(get_db)
+):
     """
     Get personalized recipe recommendations based on user preferences.
     
-    Uses RAG (Retrieval Augmented Generation) to find relevant recipes
-    from the vector database and generate personalized recommendations.
+    Uses FULL RAG (Retrieval Augmented Generation):
+    - Semantic search via ChromaDB
+    - Full recipe retrieval from PostgreSQL
+    - LLM-generated personalized recommendations
+    
+    Returns complete recipes with ingredients and steps.
     """
     try:
-        recommendations = rag_service.get_recipe_recommendations(
+        recommendations = await rag_service.get_recipe_recommendations(
             user_query=request.query,
+            db=db,
             dietary_restrictions=request.dietary_restrictions,
             max_calories=request.max_calories,
             n_results=request.n_results
@@ -74,15 +82,23 @@ async def get_recipe_recommendations(request: RecipeRecommendationRequest):
 
 
 @router.post("/search-by-ingredients")
-async def search_by_ingredients(request: IngredientSearchRequest):
+async def search_by_ingredients(
+    request: IngredientSearchRequest,
+    db: Session = Depends(get_db)
+):
     """
-    Search for recipes by ingredients.
+    Search for recipes by ingredients with FULL context.
     
-    Returns recipes that contain or work well with the specified ingredients.
+    Returns complete recipes (with ingredients & steps) that contain or work well 
+    with the specified ingredients. Uses unified RAG search.
     """
     try:
-        recipes = rag_service.search_by_ingredients(
-            ingredients=request.ingredients,
+        # Create natural language query from ingredients
+        query = f"recipes with {', '.join(request.ingredients)}"
+        
+        recipes = await rag_service.search_recipes_with_full_context(
+            query=query,
+            db=db,
             n_results=request.n_results
         )
         
@@ -100,17 +116,21 @@ async def search_by_ingredients(request: IngredientSearchRequest):
 @router.get("/search-by-category")
 async def search_by_category(
     category: str = Query(..., description="Recipe category to search for"),
-    n_results: int = Query(10, ge=1, le=50)
+    n_results: int = Query(10, ge=1, le=50),
+    db: Session = Depends(get_db)
 ):
     """
-    Search for recipes by category.
+    Search for recipes by category with FULL context.
     
     Categories include: Desserts, Main Dish, Breakfast, Lunch/Snacks, etc.
+    Returns complete recipes with ingredients and steps.
     """
     try:
-        recipes = rag_service.search_by_category(
-            category=category,
-            n_results=n_results
+        recipes = await rag_service.search_recipes_with_full_context(
+            query=category,
+            db=db,
+            n_results=n_results,
+            metadata_filter={"category": category}
         )
         
         return {
@@ -149,7 +169,7 @@ async def get_categories():
     (e.g., Dessert, Chicken, Breakfast, Asian, etc.)
     """
     try:
-        categories = rag_service.get_all_categories()
+        categories = rag_service.vector_store.get_unique_categories()
         
         return {
             "categories": categories,
@@ -174,7 +194,7 @@ async def get_keywords():
     - cuisine: Asian, Indian, Mexican, etc.
     """
     try:
-        keywords = rag_service.get_all_keywords()
+        keywords = rag_service.vector_store.get_unique_keywords()
         
         return {
             "keywords": keywords,
@@ -228,20 +248,20 @@ async def search_recipes(
         # Always fetch enough for multiple pages, more if we have post-filters
         has_post_filters = bool(keywords or max_calories or min_protein or max_carbs or max_fat or servings)
         fetch_multiplier = 5 if has_post_filters else 4  # 4 pages normally, 5 with filters
-        fetch_limit = min(limit * fetch_multiplier, 500)  # Cap at 500 to avoid overload
+        fetch_limit = min(limit * fetch_multiplier, 2000)  # Cap at 500 to avoid overload
         
-        # Search with RAG service
+        # Search with RAG service using vector store directly
         if search:
             # Use semantic search with query
-            results = rag_service.search_recipes(
+            results = rag_service.vector_store.search_recipes(
                 query=search,
-                metadata_filter=metadata_filters if metadata_filters else None,
+                filter_dict=metadata_filters if metadata_filters else None,
                 n_results=fetch_limit
             )
         else:
             # Get all recipes matching filters
-            results = rag_service.get_filtered_recipes(
-                metadata_filter=metadata_filters if metadata_filters else None,
+            results = rag_service.vector_store.get_recipes_by_filter(
+                filter_dict=metadata_filters if metadata_filters else None,
                 n_results=fetch_limit
             )
         
@@ -343,32 +363,9 @@ async def get_recipe_details(recipe_id: str, session_id: str = None, db: Session
             db_recipe = get_recipe(db, recipe_id_int)
             if db_recipe:
                 # Convert to response format matching ChromaDB structure
-                recipe_response = {
-                    "id": db_recipe.id,
-                    "name": db_recipe.name,
-                    "description": db_recipe.description or "",
-                    "servings": db_recipe.servings,
-                    "time": db_recipe.total_time_minutes,  # ChromaDB uses 'time', not 'total_time_minutes'
-                    "ingredients": [
-                        {
-                            "name": ing.ingredient_name,
-                            "quantity": ing.quantity or "",
-                            "unit": ing.unit or ""
-                        }
-                        for ing in sorted(db_recipe.ingredients, key=lambda x: x.id)
-                    ],
-                    "steps": [
-                        {
-                            "number": step.step_number,
-                            "instruction": step.instruction
-                        }
-                        for step in sorted(db_recipe.steps, key=lambda x: x.step_number)
-                    ],
-                    "source_type": db_recipe.source_type,
-                    "source_ref": db_recipe.source_ref,
-                    "keywords": [tag.tag for tag in db_recipe.tags],
-                    "created_at": db_recipe.created_at.isoformat() if db_recipe.created_at else None
-                }
+                # Use RecipeSerializer for consistency
+                from app.db.serializers import RecipeSerializer
+                recipe_response = RecipeSerializer.model_to_dict(db_recipe)
                 
                 # Add nutrition data if available
                 if db_recipe.nutrition:
@@ -392,8 +389,8 @@ async def get_recipe_details(recipe_id: str, session_id: str = None, db: Session
             # Not a numeric ID, continue to ChromaDB lookup
             pass
         
-        # Fall back to ChromaDB lookup (for dataset recipes)
-        recipe = rag_service.get_recipe_by_id(recipe_id)
+        # Fall back to full RAG lookup (for dataset recipes)
+        recipe = rag_service.get_recipe_by_id(recipe_id, db)
         
         if not recipe:
             raise HTTPException(status_code=404, detail="Recipe not found")

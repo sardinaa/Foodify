@@ -70,10 +70,10 @@ def model_to_recipe(model: RecipeModel) -> Recipe:
     """Convert RecipeModel to Recipe schema."""
     from app.db.schema import IngredientBase, RecipeStepBase
     
-    # Convert ingredients
+    # Convert ingredients (handle both database models and Pydantic models)
     ingredients = [
         IngredientBase(
-            name=ing.ingredient_name,
+            name=getattr(ing, 'ingredient_name', None) or getattr(ing, 'name', 'Unknown'),
             quantity=ing.quantity,
             unit=ing.unit
         )
@@ -92,7 +92,8 @@ def model_to_recipe(model: RecipeModel) -> Recipe:
     # Get tags
     tags = [tag.tag for tag in model.tags]
     
-    return Recipe(
+    # Create Recipe - Pydantic will auto-serialize datetime
+    recipe = Recipe(
         id=model.id,
         name=model.name,
         description=model.description,
@@ -105,3 +106,5 @@ def model_to_recipe(model: RecipeModel) -> Recipe:
         tags=tags,
         created_at=model.created_at
     )
+    
+    return recipe

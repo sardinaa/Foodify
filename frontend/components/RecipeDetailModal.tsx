@@ -22,7 +22,7 @@ interface RecipeDetailProps {
   difficulty?: string;
   keywords: string[];
   ingredients: Array<{ name: string; quantity?: string; unit?: string }>;
-  steps: Array<{ number: number; instruction: string }>;
+  steps: Array<{ number: number; instruction: string; step_number?: number }>;
 }
 
 interface RecipeDetailModalProps {
@@ -225,14 +225,17 @@ export default function RecipeDetailModal({
               {instructionsExpanded && (
                 <div className="space-y-4">
                   {recipe.steps && recipe.steps.length > 0 ? (
-                    recipe.steps.map((step) => (
-                      <div key={step.number} className="flex gap-4 p-4 bg-gray-50 rounded-lg">
+                    recipe.steps.map((step, index) => {
+                      const stepKey = step.step_number ?? step.number ?? index;
+                      return (
+                        <div key={stepKey} className="flex gap-4 p-4 bg-gray-50 rounded-lg">
                         <div className="shrink-0 w-8 h-8 bg-emerald-600 text-white rounded-full flex items-center justify-center font-semibold">
                           {step.number}
                         </div>
                         <p className="text-gray-900 flex-1">{step.instruction}</p>
-                      </div>
-                    ))
+                        </div>
+                      );
+                    })
                   ) : (
                     <p className="text-gray-500 text-center py-4">No instructions available</p>
                   )}
@@ -291,7 +294,7 @@ export default function RecipeDetailModal({
                   {similarRecipes.map((similar) => (
                     <div
                       key={similar.id}
-                      className="flex-shrink-0 w-48 bg-white border border-gray-200 rounded-lg overflow-hidden cursor-pointer hover:shadow-md transition-shadow"
+                      className="shrink-0 w-48 bg-white border border-gray-200 rounded-lg overflow-hidden cursor-pointer hover:shadow-md transition-shadow"
                     >
                       <div className="h-32 bg-linear-to-br from-emerald-100 to-blue-100" />
                       <div className="p-3">

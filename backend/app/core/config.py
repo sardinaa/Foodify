@@ -13,15 +13,15 @@ class Settings(BaseSettings):
     api_host: str = "0.0.0.0"
     api_port: int = 8000
     
-    # Database
-    database_url: str = "sqlite:////home/sardina/Documents/Portfolio/Foodify/backend/foodify.db"
+    # Database (use relative path or set via environment variable)
+    database_url: str = "sqlite:///./foodify.db"
     
-    # Data paths
-    nutrition_data_path: str = "/home/sardina/Desktop/data/nutrition_data.csv"
+    # Data paths (use relative path or set via environment variable)
+    nutrition_data_path: str = "../data/nutrition_data.csv"
     
     # RAG Configuration
     embedding_model: str = "sentence-transformers/all-MiniLM-L6-v2"
-    vector_store_path: str = "/home/sardina/Documents/Portfolio/Foodify/backend/chroma_db"
+    vector_store_path: str = "./chroma_db"
     recipes_dataset: str = "AkashPS11/recipes_data_food.com"
     
     # LLM Configuration

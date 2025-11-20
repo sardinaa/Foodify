@@ -228,7 +228,7 @@ def extract_social_media_content(url: str, html_content: str) -> Dict:
         Dict with 'type' ('text') and 'content' (extracted text)
     """
     soup = BeautifulSoup(html_content, 'lxml')
-    platform = _detect_platform(url)
+    platform = detect_social_platform(url)
     
     print(f"🔍 Extracting content from {platform}...")
     
@@ -281,7 +281,7 @@ def extract_social_media_content(url: str, html_content: str) -> Dict:
     return {'type': 'text', 'content': cleaned_text}
 
 
-def _detect_platform(url: str) -> Optional[str]:
+def detect_social_platform(url: str) -> Optional[str]:
     """Detect social media platform from URL."""
     parsed = urlparse(url.lower())
     domain = parsed.netloc.replace('www.', '')
@@ -296,7 +296,9 @@ def _detect_platform(url: str) -> Optional[str]:
         'facebook.com': 'facebook',
         'fb.com': 'facebook',
         'pinterest.com': 'pinterest',
-        'pin.it': 'pinterest'
+        'pin.it': 'pinterest',
+        'reddit.com': 'reddit',
+        'snapchat.com': 'snapchat'
     }
     
     return platform_map.get(domain)

@@ -4,11 +4,22 @@ Entry point for the Food Assistant API.
 """
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
 from contextlib import asynccontextmanager
+import json
+from datetime import datetime
 
 from app.core.config import get_settings
 from app.db.session import init_db
 from app.api import routes_image, routes_url, routes_chat, routes_rag
+
+
+# Custom JSON encoder for datetime
+class DateTimeEncoder(json.JSONEncoder):
+    def default(self, obj):
+        if isinstance(obj, datetime):
+            return obj.isoformat()
+        return super().default(obj)
 
 
 @asynccontextmanager

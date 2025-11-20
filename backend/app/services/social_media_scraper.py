@@ -7,7 +7,13 @@ import httpx
 import json
 import re
 from typing import Dict, Optional
-from urllib.parse import urlparse, parse_qs
+from urllib.parse import urlparse
+
+from app.utils.text_cleaning import (
+    detect_social_platform,
+    extract_social_media_content,
+    is_social_media_url,
+)
 
 
 class SocialMediaScraper:
@@ -36,7 +42,7 @@ class SocialMediaScraper:
         Returns:
             Dict with 'html', 'text', and 'metadata' keys, or None if failed
         """
-        platform = self.detect_platform(url)
+        platform = detect_social_platform(url)
         
         if platform == 'youtube':
             return await self._scrape_youtube(url)
@@ -78,12 +84,9 @@ class SocialMediaScraper:
                 html_response = await client.get(url, headers=headers)
                 html_content = html_response.text
                 
-                # Extract more metadata from HTML
-                text_content = self._extract_youtube_metadata(html_content, metadata)
-                
                 return {
                     'html': html_content,
-                    'text': text_content,
+                    'text': '',
                     'metadata': metadata
                 }
                 
@@ -205,62 +208,13 @@ class SocialMediaScraper:
                 return match.group(1)
         return None
     
-    def _extract_youtube_metadata(self, html: str, metadata: dict) -> str:
-        """Extract additional metadata from YouTube HTML."""
-        text_parts = []
-        
-        # Add title from oEmbed
-        if metadata.get('title'):
-            text_parts.append(f"Video: {metadata['title']}")
-        
-        # Try to extract description from HTML
-        desc_match = re.search(r'"description":\s*"([^"]+)"', html)
-        if desc_match:
-            description = desc_match.group(1).replace('\\n', '\n')
-            text_parts.append(f"\nDescription: {description}")
-        
-        return '\n'.join(text_parts)
-    
     def detect_platform(self, url: str) -> Optional[str]:
-        """
-        Detect which social media platform the URL is from.
-        
-        Args:
-            url: URL to analyze
-            
-        Returns:
-            Platform name or None if not a known social media platform
-        """
-        parsed = urlparse(url.lower())
-        domain = parsed.netloc.replace('www.', '')
-        
-        platform_map = {
-            'instagram.com': 'instagram',
-            'tiktok.com': 'tiktok',
-            'youtube.com': 'youtube',
-            'youtu.be': 'youtube',
-            'twitter.com': 'twitter',
-            'x.com': 'twitter',
-            'facebook.com': 'facebook',
-            'fb.com': 'facebook',
-            'pinterest.com': 'pinterest',
-            'pin.it': 'pinterest',
-            'reddit.com': 'reddit'
-        }
-        
-        return platform_map.get(domain)
+        """Backward-compatible wrapper around the shared detector."""
+        return detect_social_platform(url)
     
     def is_social_media(self, url: str) -> bool:
-        """
-        Check if URL is from a social media platform.
-        
-        Args:
-            url: URL to check
-            
-        Returns:
-            True if URL is from social media platform
-        """
-        return self.detect_platform(url) is not None
+        """Return True when the URL belongs to a supported social platform."""
+        return is_social_media_url(url)
 
 
 async def fetch_social_media_content(url: str) -> Optional[Dict]:
@@ -282,7 +236,7 @@ async def fetch_social_media_content(url: str) -> Optional[Dict]:
     """
     scraper = SocialMediaScraper()
     
-    platform = scraper.detect_platform(url)
+    platform = detect_social_platform(url)
     if not platform:
         print(f"⚠️ URL does not appear to be from a supported social media platform")
         return None
@@ -292,7 +246,11 @@ async def fetch_social_media_content(url: str) -> Optional[Dict]:
     
     result = await scraper.scrape_url(url)
     if result:
-        html_len = len(result.get('html', ''))
+        html = result.get('html', '')
+        if html:
+            extracted = extract_social_media_content(url, html)
+            result['text'] = extracted.get('content', '')
+        html_len = len(html)
         text_len = len(result.get('text', ''))
         print(f"✓ Successfully extracted {html_len} chars HTML, {text_len} chars text")
         return result

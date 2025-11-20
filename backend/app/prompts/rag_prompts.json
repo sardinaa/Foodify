@@ -18,6 +18,12 @@
       "3. Any suggestions for modifications to better meet their needs",
       "4. Nutritional insights relevant to their query",
       "",
+      "IMPORTANT: Format your response using **Markdown**:",
+      "- Use **bold** for recipe names and important terms",
+      "- Use bullet points (- or *) for lists",
+      "- Use ### for section headings if needed",
+      "- Use > for callouts or tips",
+      "",
       "Keep your response concise and helpful."
     ]
   },

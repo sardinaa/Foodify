@@ -9,6 +9,7 @@ from typing import List, Dict, Any, Optional
 import logging
 import json
 import re
+from functools import lru_cache
 
 logger = logging.getLogger(__name__)
 
@@ -503,3 +504,9 @@ class RecipeVectorStore:
         except Exception as e:
             logger.error(f"Failed to get recipe by ID: {e}")
             return None
+
+
+@lru_cache(maxsize=None)
+def get_vector_store(persist_directory: str, embedding_model: str) -> "RecipeVectorStore":
+    """Return a cached RecipeVectorStore instance for the given settings."""
+    return RecipeVectorStore(persist_directory=persist_directory, embedding_model=embedding_model)

@@ -12,7 +12,7 @@ from app.services.image_pipeline import analyze_image_pipeline
 router = APIRouter()
 
 
-@router.post("/analyze-image", response_model=AnalyzeImageResponse)
+@router.post("/analyze-image")
 async def analyze_image(
     image: UploadFile = File(...),
     title: Optional[str] = Form(None),
@@ -35,12 +35,22 @@ async def analyze_image(
             db, image_bytes, title
         )
         
-        return AnalyzeImageResponse(
+        # Create response and serialize manually to handle datetime
+        print(f"[Image API] Creating response with recipe type: {type(recipe)}")
+        print(f"[Image API] Recipe created_at type: {type(recipe.created_at)}")
+        
+        response = AnalyzeImageResponse(
             recipe=recipe,
             nutrition=nutrition,
             tags=tags,
             debug=debug
         )
+        
+        print(f"[Image API] Response created, dumping to JSON...")
+        # Use Pydantic's model_dump with mode='json' to properly serialize datetime
+        result = response.model_dump(mode='json')
+        print(f"[Image API] Successfully dumped to JSON, returning...")
+        return result
     
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Image analysis failed: {str(e)}")

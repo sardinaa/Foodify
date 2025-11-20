@@ -4,7 +4,7 @@ These define the structure of data flowing through the API.
 """
 from typing import Optional, List, Dict
 from datetime import datetime
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, ConfigDict
 
 
 class IngredientBase(BaseModel):
@@ -45,8 +45,7 @@ class Recipe(RecipeBase):
     tags: List[str]
     created_at: datetime
     
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 
 class NutritionBase(BaseModel):
@@ -63,8 +62,7 @@ class NutritionSummary(BaseModel):
     total: NutritionBase
     per_serving: NutritionBase
     
-    class Config:
-        from_attributes = True
+    model_config = {"from_attributes": True}
 
 
 class AnalyzeImageRequest(BaseModel):
@@ -142,8 +140,7 @@ class UserRequirement(BaseModel):
     created_at: datetime
     is_active: bool = True
     
-    class Config:
-        from_attributes = True
+    model_config = {"from_attributes": True}
 
 
 class ChatMessage(BaseModel):
@@ -155,8 +152,7 @@ class ChatMessage(BaseModel):
     recipe_ids: Optional[List[int]] = None
     created_at: datetime
     
-    class Config:
-        from_attributes = True
+    model_config = {"from_attributes": True}
 
 
 class ConversationSummary(BaseModel):

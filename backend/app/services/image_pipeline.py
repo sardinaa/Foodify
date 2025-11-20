@@ -8,7 +8,7 @@ from sqlalchemy.orm import Session
 from app.core.vlm_client import get_vlm_client
 from app.core.llm_client import get_llm_client
 from app.db.schema import Recipe, NutritionSummary
-from app.services.recipe_service import create_recipe_with_nutrition
+from app.services.ingestion.base import persist_generated_recipe
 
 
 async def analyze_image_pipeline(
@@ -63,12 +63,15 @@ Generate a complete recipe with ingredients and cooking steps."""
     for ing in recipe_base.ingredients[:5]:  # Show first 5
         print(f"  - {ing.name}: {ing.quantity} {ing.unit}")
     
-    recipe, nutrition = create_recipe_with_nutrition(
+    recipe, nutrition, tags = await persist_generated_recipe(
         db,
+        llm,
         recipe_base,
         source_type="image",
         source_ref=title or "uploaded_image",
-        tags=tags
+        normalized_name=dish_name,
+        tags=tags,
+        tag_context=description,
     )
     
     print(f"[Image Pipeline] Nutrition calculated - Calories: {nutrition.per_serving.kcal}, Protein: {nutrition.per_serving.protein}g")

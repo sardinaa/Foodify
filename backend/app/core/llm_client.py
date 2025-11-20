@@ -112,17 +112,10 @@ class LLMClient:
         
         response = await self._call_ollama(user_prompt, system_prompt)
         
-        # Parse JSON response
+        # Parse JSON response using robust parser
         try:
-            # Extract JSON from response (in case there's extra text)
-            json_start = response.find('{')
-            json_end = response.rfind('}') + 1
-            if json_start >= 0 and json_end > json_start:
-                json_str = response[json_start:json_end]
-            else:
-                json_str = response
-            
-            data = json.loads(json_str)
+            from app.utils.json_parser import extract_json_from_llm_response
+            data = extract_json_from_llm_response(response)
             
             # Convert to RecipeBase
             ingredients = [IngredientBase(**ing) for ing in data.get("ingredients", [])]
@@ -137,15 +130,10 @@ class LLMClient:
                 steps=steps
             )
         except (json.JSONDecodeError, KeyError) as e:
-            # Fallback if parsing fails
-            return RecipeBase(
-                name="Recipe (parsing error)",
-                description="Could not parse recipe details",
-                servings=4,
-                total_time_minutes=30,
-                ingredients=[],
-                steps=[]
-            )
+            # Don't silently fail - raise an exception so caller knows extraction failed
+            print(f"❌ Failed to parse LLM response as recipe JSON: {e}")
+            print(f"📝 LLM Response: {response[:500]}")
+            raise ValueError(f"Could not extract recipe from text. LLM response was not valid JSON: {e}")
     
     async def normalize_dish_name_and_tags(
         self,

@@ -1,0 +1,64 @@
+version: '3.8'
+
+services:
+  # Backend FastAPI service
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: foodify-backend
+    ports:
+      - "8000:8000"
+    environment:
+      - API_HOST=0.0.0.0
+      - API_PORT=8000
+      - DATABASE_URL=sqlite:///app/foodify.db
+      - NUTRITION_DATA_PATH=/app/data/nutrition_data.csv
+      - VECTOR_STORE_PATH=/app/chroma_db
+      - RECIPES_DATASET=AkashPS11/recipes_data_food.com
+      - EMBEDDING_MODEL=sentence-transformers/all-MiniLM-L6-v2
+      - LLM_PROVIDER=ollama
+      - LLM_BASE_URL=http://host.docker.internal:11434
+      - LLM_MODEL=llama3:latest
+      - VLM_PROVIDER=ollama
+      - VLM_BASE_URL=http://host.docker.internal:11434
+      - VLM_MODEL=qwen3-vl:latest
+    volumes:
+      - ./backend/foodify.db:/app/foodify.db
+      - ./backend/chroma_db:/app/chroma_db
+      - ./data:/app/data
+    networks:
+      - foodify-network
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+
+  # Frontend Next.js service
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    container_name: foodify-frontend
+    ports:
+      - "3000:3000"
+    environment:
+      - NEXT_PUBLIC_API_URL=http://localhost:8000/api
+      - NODE_ENV=production
+    depends_on:
+      backend:
+        condition: service_healthy
+    networks:
+      - foodify-network
+    restart: unless-stopped
+
+networks:
+  foodify-network:
+    driver: bridge
+
+volumes:
+  chroma_db:
+  foodify_db:

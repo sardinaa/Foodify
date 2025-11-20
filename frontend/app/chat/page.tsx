@@ -6,6 +6,7 @@ import { sendChatMessage, getRecipeById, Recipe } from '@/lib/apiClient';
 import type { RecipeSearchResult } from '@/lib/apiClient';
 import { formatTime } from '@/lib/utils';
 import RecipeDetailModal from '@/components/RecipeDetailModal';
+import MarkdownRenderer from '@/components/MarkdownRenderer';
 
 type ChatRecipe = RecipeSearchResult & {
   fullRecipe?: Recipe; // Store the full recipe data from chat response
@@ -34,12 +35,12 @@ export default function ChatPage() {
   const [imagePreview, setImagePreview] = useState<string | null>(null);
 
   const starterPrompts = [
-    'Find recipes with ingredients I have',
-    'Scan a recipe photo',
+    'Find recipes with ingredients I have in my fridge',
+    'Which is the nutritional values of this dish?',
     'Import recipe from URL',
     'Generate my weekly menu',
     'Show me high-protein meals',
-    'Quick dinner ideas (<30 mins)',
+    'Quick dinner ideas under 30 mins',
   ];
 
   const handleImageSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -290,7 +291,11 @@ export default function ChatPage() {
                         : 'bg-white border border-gray-200 text-gray-900'
                     }`}
                   >
-                    <p className="whitespace-pre-wrap">{message.content}</p>
+                    {message.role === 'user' ? (
+                      <p className="whitespace-pre-wrap">{message.content}</p>
+                    ) : (
+                      <MarkdownRenderer content={message.content} />
+                    )}
                     <p
                       className={`text-xs mt-2 ${
                         message.role === 'user' ? 'text-emerald-100' : 'text-gray-500'
@@ -473,7 +478,7 @@ export default function ChatPage() {
             </div>
           )}
           
-          <div className="flex gap-2 items-end">
+          <div className="flex gap-2 items-center">
             <div className="flex gap-2">
               <input
                 type="file"
@@ -484,7 +489,7 @@ export default function ChatPage() {
               />
               <label
                 htmlFor="image-upload"
-                className="p-2 text-gray-600 hover:text-emerald-600 hover:bg-emerald-50 rounded-lg transition-colors cursor-pointer"
+                className="p-3 text-gray-600 hover:text-emerald-600 hover:bg-emerald-50 rounded-lg transition-colors cursor-pointer flex items-center justify-center"
                 title="Upload image"
               >
                 <ImageIcon size={20} />
@@ -503,7 +508,7 @@ export default function ChatPage() {
                 }}
                 placeholder="Type a message, paste a URL, or upload an image..."
                 rows={1}
-                className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:border-transparent resize-none"
+                className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:border-transparent resize-none text-gray-900"
                 style={{ minHeight: '44px', maxHeight: '120px' }}
               />
             </div>
@@ -511,7 +516,7 @@ export default function ChatPage() {
             <button
               onClick={handleSend}
               disabled={(!input.trim() && !selectedImage) || isLoading}
-              className="p-3 bg-emerald-600 text-white rounded-lg hover:bg-emerald-700 disabled:bg-gray-300 disabled:cursor-not-allowed transition-colors"
+              className="p-3 bg-emerald-600 text-white rounded-lg hover:bg-emerald-700 disabled:bg-gray-300 disabled:cursor-not-allowed transition-colors flex items-center justify-center"
             >
               {isLoading ? <Loader2 size={20} className="animate-spin" /> : <Send size={20} />}
             </button>

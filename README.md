@@ -4,16 +4,17 @@
 
 <div align="center">
 
-![Status](https://img.shields.io/badge/Status-MVP%20Complete-success)
+![Status](https://img.shields.io/badge/Status-Production%20Ready-success)
 ![Python](https://img.shields.io/badge/Python-3.10%2B-blue)
 ![Node](https://img.shields.io/badge/Node-18%2B-green)
+![Docker](https://img.shields.io/badge/Docker-Ready-blue)
 ![License](https://img.shields.io/badge/License-MIT-orange)
 
 </div>
 
 ---
 
-## 🌟 Features
+## �🌟 Features
 
 ### 📸 **Image Analysis Pipeline**
 Upload a photo of any dish and let AI do the magic:
@@ -42,69 +43,115 @@ Two powerful modes for personalized assistance:
 - Customize based on dietary goals, cuisine preferences, and household size
 - Optimized for variety and nutritional balance
 
-### 🎯 **Recipe Recommendation System (RAG)**
-Powered by ChromaDB vector database and semantic search:
-- **Semantic Search**: Find similar recipes based on ingredients and cooking style
+### 🎯 **Recipe Recommendation System (Full RAG)**
+Powered by ChromaDB vector database and semantic search with complete recipe context:
+- **Full RAG Implementation**: Semantic search (ChromaDB) + complete recipe retrieval (PostgreSQL/SQLite) + LLM-generated recommendations
+- **Complete Context**: Returns full recipes with ingredients, steps, and nutrition—not just metadata
 - **Context-Aware**: Understands recipe relationships and flavor profiles
 - **Conversational Memory**: Maintains chat context for coherent multi-turn interactions
+- **Unified Search**: Single search method handles ingredients, categories, and cooking styles
+
+### 🐳 **Docker Deployment**
+Production-ready containerization:
+- **Docker Compose**: One-command deployment for both frontend and backend
+- **Persistent Storage**: Database and vector store mounted as volumes
+- **Health Checks**: Automatic service health monitoring
+- **Easy Scaling**: Configure resource limits and replicas
+- **Ollama Integration**: Seamless connection to host-based Ollama models
 
 ---
 
 ## 🏗️ Architecture
 
 ```
-┌─────────────────────────────────────────────────────┐
-│                  Frontend (Next.js)                  │
-│   React + TypeScript + Tailwind CSS + ShadcnUI      │
-└────────────────────┬────────────────────────────────┘
+┌──────────────────────────────────────────────────────────┐
+│                 Frontend (Next.js 14)                     │
+│  React 18 + TypeScript + Tailwind CSS + ShadcnUI        │
+│  Standalone Build (Docker-ready)                         │
+└────────────────────┬─────────────────────────────────────┘
                      │ REST API
-┌────────────────────┴────────────────────────────────┐
-│              Backend (FastAPI + Python)              │
-│  ┌──────────────────────────────────────────────┐   │
-│  │  API Routes (Image, URL, Chat, RAG)          │   │
-│  └──────────────────────────────────────────────┘   │
-│  ┌──────────────────────────────────────────────┐   │
-│  │  Services (Pipelines, Agents, Scrapers)      │   │
-│  └──────────────────────────────────────────────┘   │
-│  ┌──────────────────────────────────────────────┐   │
-│  │  AI Clients (Ollama LLM + VLM Integration)   │   │
-│  └──────────────────────────────────────────────┘   │
-│  ┌──────────────────────────────────────────────┐   │
-│  │  Database (SQLAlchemy + SQLite)              │   │
-│  └──────────────────────────────────────────────┘   │
-└─────────────────────────────────────────────────────┘
-                     │
-      ┌──────────────┼──────────────┐
-      │              │              │
-  ┌───┴───┐    ┌─────┴─────┐  ┌────┴────┐
-  │Ollama │    │ ChromaDB  │  │ SQLite  │
-  │ LLM   │    │ Vectors   │  │   DB    │
-  └───────┘    └───────────┘  └─────────┘
+┌────────────────────┴─────────────────────────────────────┐
+│              Backend (FastAPI + Python 3.11)              │
+│  ┌───────────────────────────────────────────────────┐   │
+│  │  API Routes Layer                                  │   │
+│  │  - Image Analysis   - URL Extraction              │   │
+│  │  - Chat Agent       - RAG Search                  │   │
+│  └───────────────────────────────────────────────────┘   │
+│  ┌───────────────────────────────────────────────────┐   │
+│  │  Service Layer (Refactored & Modular)             │   │
+│  │  - Pipelines: image_pipeline, url_pipeline        │   │
+│  │  - Chat: intent, router, helpers (new modules)    │   │
+│  │  - RAG: Full context retrieval + generation       │   │
+│  │  - Scrapers: Social media, video transcription    │   │
+│  │  - Memory: Conversation context management        │   │
+│  └───────────────────────────────────────────────────┘   │
+│  ┌───────────────────────────────────────────────────┐   │
+│  │  Core & Utils (Enhanced)                          │   │
+│  │  - LLM/VLM Clients  - Constants (NEW)             │   │
+│  │  - Config (relative paths) - Serializers (NEW)    │   │
+│  │  - JSON Parser (NEW) - Prompt Loader              │   │
+│  └───────────────────────────────────────────────────┘   │
+│  ┌───────────────────────────────────────────────────┐   │
+│  │  Database Layer (SQLAlchemy + SQLite)             │   │
+│  │  - Models  - CRUD  - Serializers (unified)        │   │
+│  └───────────────────────────────────────────────────┘   │
+└──────────────────────┬──────────────────────────────────┘
+                       │
+      ┌────────────────┼────────────────┐
+      │                │                │
+  ┌───┴────┐    ┌──────┴──────┐   ┌────┴────┐
+  │Ollama  │    │  ChromaDB   │   │ SQLite  │
+  │LLM/VLM │    │(Embeddings) │   │   DB    │
+  │(Host)  │    │  + Full RAG │   │         │
+  └────────┘    └─────────────┘   └─────────┘
+
+Docker Deployment (Optional):
+┌─────────────────────────────────────────┐
+│       Docker Compose Orchestration       │
+│  ┌─────────────┐    ┌─────────────┐    │
+│  │  Frontend   │    │   Backend   │    │
+│  │  Container  │◄───┤  Container  │    │
+│  └─────────────┘    └─────────────┘    │
+│         ▲                  ▲            │
+│         │                  │            │
+│    Volume Mounts     Host Network       │
+│    (database, etc)   (Ollama access)    │
+└─────────────────────────────────────────┘
 ```
 
 ### Technology Stack
 
-**Backend**
-- **Framework**: FastAPI (async Python web framework)
-- **Database**: SQLite with SQLAlchemy ORM
+**Backend** (Production-Ready)
+- **Framework**: FastAPI (async Python 3.11+)
+- **Database**: SQLite with SQLAlchemy ORM + unified serializers
 - **AI Models**: Ollama (local LLM & Vision models)
-- **Vector DB**: ChromaDB for semantic search
+- **Vector DB**: ChromaDB for semantic search + cached instance
+- **RAG System**: Full RAG implementation (retrieval + augmentation + generation)
 - **Data Processing**: Pandas, RapidFuzz (fuzzy matching)
 - **Web Scraping**: BeautifulSoup4, httpx, yt-dlp
 - **Transcription**: Faster-Whisper for video-to-text
+- **Configuration**: Centralized constants, relative paths
+- **Code Quality**: Modular architecture, DRY principles
 
-**Frontend**
-- **Framework**: Next.js 14 (React 18+)
+**Frontend** (Docker-Ready)
+- **Framework**: Next.js 14 (React 18+) with standalone output
 - **Language**: TypeScript
 - **Styling**: Tailwind CSS
 - **UI Components**: Custom React components
 - **API Client**: Fetch API with TypeScript types
+- **Build**: Optimized for containerization
 
 **Data & ML**
 - **Nutrition Dataset**: 2,395 food items (Kaggle)
-- **Embeddings**: Sentence Transformers
-- **RAG Framework**: LangChain
-- **Vector Store**: ChromaDB
+- **Embeddings**: Sentence Transformers (all-MiniLM-L6-v2)
+- **RAG Framework**: Custom implementation with full context
+- **Vector Store**: ChromaDB with metadata + full recipe storage
+
+**DevOps & Deployment**
+- **Containerization**: Docker + Docker Compose
+- **Configuration**: Environment-based, portable
+- **Persistence**: Volume mounts for data and databases
+- **Health Checks**: Service monitoring and auto-restart
 
 ---
 
@@ -124,7 +171,7 @@ Powered by ChromaDB vector database and semantic search:
 
 ---
 
-## 🚀 Quick Start
+## 🚀 Quick Start with Docker
 
 ### Prerequisites
 
@@ -132,10 +179,9 @@ Before you begin, ensure you have the following installed:
 
 | Tool | Version | Purpose |
 |------|---------|---------|
-| **Python** | 3.10+ | Backend runtime |
-| **Node.js** | 18+ | Frontend runtime |
-| **npm** | 8+ | Package manager |
-| **Ollama** | Latest | Local AI models |
+| **Docker** | 20.10+ | Container runtime |
+| **Docker Compose** | 2.0+ | Multi-container orchestration |
+| **Ollama** | Latest | Local AI models (LLM/VLM) |
 
 ### 1️⃣ Install Ollama and Models
 
@@ -156,119 +202,180 @@ ollama list
 # Should show: llama3.2 and llama3.2-vision
 ```
 
-### 2️⃣ Automated Setup (Recommended)
-
-Run the setup script to automatically configure everything:
+### 2️⃣ Deploy with Docker Compose
 
 ```bash
 # Clone the repository
 git clone https://github.com/yourusername/Foodify.git
 cd Foodify
 
-# Make setup script executable
-chmod +x setup.sh
+# Build and start all services
+docker-compose up --build
 
-# Run automated setup
-./setup.sh
+# Or run in detached mode (recommended)
+docker-compose up -d --build
 ```
 
-The script will:
-- ✅ Check all prerequisites
-- ✅ Set up Python virtual environment
-- ✅ Install backend dependencies
-- ✅ Configure environment variables
-- ✅ Initialize the database
-- ✅ Install frontend dependencies
-- ✅ Validate the installation
+That's it! Docker will:
+- ✅ Build backend and frontend containers
+- ✅ Set up the database and vector store
+- ✅ Configure networking between services
+- ✅ Start health monitoring
+- ✅ Mount data volumes for persistence
 
-### 3️⃣ Manual Setup (Alternative)
+### 3️⃣ Access the Application
 
-#### Backend Setup
-
-```bash
-# Navigate to backend directory
-cd backend
-
-# Create and activate virtual environment
-python3 -m venv venv
-source venv/bin/activate  # On Windows: venv\Scripts\activate
-
-# Install dependencies
-pip install -r requirements.txt
-
-# Create .env file
-cat > .env << EOL
-API_HOST=0.0.0.0
-API_PORT=8000
-DATABASE_URL=sqlite:///./foodify.db
-NUTRITION_DATA_PATH=../data/nutrition_data.csv
-LLM_PROVIDER=ollama
-LLM_BASE_URL=http://localhost:11434
-LLM_MODEL=llama3.2
-VLM_PROVIDER=ollama
-VLM_BASE_URL=http://localhost:11434
-VLM_MODEL=llama3.2-vision
-EOL
-
-# Initialize database (optional - auto-created on first run)
-python -c "from app.db.models import Base; from app.db.session import engine; Base.metadata.create_all(bind=engine)"
-```
-
-#### Frontend Setup
-
-```bash
-# Navigate to frontend directory
-cd frontend
-
-# Install dependencies
-npm install
-
-# Create .env.local file
-echo "NEXT_PUBLIC_API_URL=http://localhost:8000/api" > .env.local
-```
-
-### 4️⃣ Running the Application
-
-You can run both services using the start script or manually:
-
-#### Option A: Using Start Script (Recommended)
-
-```bash
-# From project root
-./start.sh
-```
-
-This will start both backend and frontend in the background.
-
-#### Option B: Manual Start
-
-**Terminal 1 - Backend:**
-```bash
-cd backend
-source venv/bin/activate  # On Windows: venv\Scripts\activate
-python -m app.main
-# OR
-uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
-```
-
-**Terminal 2 - Frontend:**
-```bash
-cd frontend
-npm run dev
-```
-
-### 5️⃣ Access the Application
-
-Once both services are running:
-
-- **Frontend App**: http://localhost:3000
+- **Frontend**: http://localhost:3000
 - **Backend API**: http://localhost:8000
-- **API Docs (Swagger)**: http://localhost:8000/docs
-- **API Docs (ReDoc)**: http://localhost:8000/redoc
+- **API Documentation**: http://localhost:8000/docs
+
+### 4️⃣ Manage Docker Services
+
+```bash
+# View running containers
+docker-compose ps
+
+# View logs
+docker-compose logs -f
+
+# View specific service logs
+docker-compose logs -f backend
+docker-compose logs -f frontend
+
+# Stop services
+docker-compose down
+
+# Stop and remove volumes (⚠️ deletes database)
+docker-compose down -v
+
+# Rebuild after code changes
+docker-compose up --build
+```
 
 ---
 
-## 📖 How to Use
+## ⚙️ Configuration
+
+### Environment Variables (Optional)
+
+Docker Compose includes sensible defaults. To customize, create a `.env` file:
+
+```bash
+cp .env.example .env
+```
+
+Edit `.env` to override defaults:
+```env
+# Backend Configuration
+API_PORT=8000
+DATABASE_URL=sqlite:///app/foodify.db
+
+# LLM/VLM Configuration
+LLM_BASE_URL=http://host.docker.internal:11434
+LLM_MODEL=llama3:latest
+VLM_MODEL=qwen3-vl:latest
+
+# Frontend
+NEXT_PUBLIC_API_URL=http://localhost:8000
+```
+
+### Customizing AI Models
+
+To use different Ollama models, edit your `.env` file:
+
+```env
+# For faster inference (smaller models)
+LLM_MODEL=llama3.2:1b
+VLM_MODEL=llava
+
+# For better quality (larger models)
+LLM_MODEL=llama3.2:70b
+VLM_MODEL=llama3.2-vision:90b
+
+# Default (recommended balance)
+LLM_MODEL=llama3.2
+VLM_MODEL=llama3.2-vision
+```
+
+Then restart Docker Compose:
+```bash
+docker-compose down
+docker-compose up -d
+```
+
+### Persistent Data
+
+Docker volumes automatically persist:
+- **Database**: `./backend/foodify.db` - all recipes and chat history
+- **Vector Store**: `./backend/chroma_db` - recipe embeddings
+- **Nutrition Data**: `./data` - nutrition database
+
+Your data is safe even if you restart or rebuild containers!
+
+### Connecting to Ollama on Host
+
+The Docker setup uses `host.docker.internal` to connect to Ollama running on your host machine:
+
+**Linux Users**: You may need to add `--add-host=host.docker.internal:host-gateway` to docker run, or update `docker-compose.yml`:
+
+```yaml
+backend:
+  extra_hosts:
+    - "host.docker.internal:host-gateway"
+```
+
+**Verify Ollama is accessible from Docker**:
+```bash
+curl http://localhost:11434/api/tags
+```
+
+### Advanced Docker Usage
+
+<details>
+<summary><b>Build Individual Services</b></summary>
+
+#### Backend Only
+```bash
+cd backend
+docker build -t foodify-backend .
+docker run -p 8000:8000 \
+  -v $(pwd)/foodify.db:/app/foodify.db \
+  -v $(pwd)/chroma_db:/app/chroma_db \
+  -e LLM_BASE_URL=http://host.docker.internal:11434 \
+  foodify-backend
+```
+
+#### Frontend Only
+```bash
+cd frontend
+docker build -t foodify-frontend .
+docker run -p 3000:3000 \
+  -e NEXT_PUBLIC_API_URL=http://localhost:8000 \
+  foodify-frontend
+```
+
+</details>
+
+### Production Deployment
+
+For production deployments:
+
+1. **Use external databases** instead of SQLite
+2. **Set up proper secrets management** for API keys
+3. **Configure reverse proxy** (nginx/Caddy) for SSL/TLS
+4. **Use orchestration** (Kubernetes, Docker Swarm) for scaling
+5. **Set resource limits** in docker-compose.yml:
+   ```yaml
+   deploy:
+     resources:
+       limits:
+         cpus: '2'
+         memory: 4G
+   ```
+
+---
+
+## �📖 How to Use
 
 ### 📸 Image Analysis
 
@@ -441,7 +548,7 @@ Search for similar recipes using semantic search.
 
 ---
 
-## 📁 Project Structure
+## �📁 Project Structure
 
 ```
 Foodify/
@@ -452,31 +559,40 @@ Foodify/
 │   │   │   ├── routes_image.py  # Image analysis endpoints
 │   │   │   ├── routes_url.py    # URL extraction endpoints
 │   │   │   ├── routes_chat.py   # Chat agent endpoints
-│   │   │   └── routes_rag.py    # RAG search endpoints
+│   │   │   └── routes_rag.py    # Full RAG endpoints (UPDATED)
 │   │   ├── services/            # Business logic
 │   │   │   ├── image_pipeline.py          # Image-to-recipe pipeline
 │   │   │   ├── url_pipeline.py            # URL extraction pipeline
-│   │   │   ├── chat_agent.py              # Chat & planning agent
-│   │   │   ├── recipe_rag.py              # RAG system
-│   │   │   ├── recipe_vectorstore.py      # Vector DB management
+│   │   │   ├── chat_agent.py              # Chat agent (REFACTORED)
+│   │   │   ├── chat/                      # Chat modules (NEW)
+│   │   │   │   ├── intent.py              # Intent detection
+│   │   │   │   ├── router.py              # Handler routing
+│   │   │   │   └── helpers.py             # Common chat helpers
+│   │   │   ├── ingestion/                 # Ingestion modules (NEW)
+│   │   │   │   └── base.py                # Shared recipe persistence
+│   │   │   ├── recipe_rag.py              # Full RAG system (ENHANCED)
+│   │   │   ├── recipe_vectorstore.py      # Vector DB (cached)
 │   │   │   ├── social_media_scraper.py    # Social media extraction
 │   │   │   ├── video_transcript.py        # Video transcription
 │   │   │   └── conversation_memory.py     # Chat context management
 │   │   ├── core/                # Core configurations
-│   │   │   ├── config.py        # App settings
+│   │   │   ├── config.py        # App settings (relative paths)
+│   │   │   ├── constants.py     # Application constants (NEW)
 │   │   │   ├── llm_client.py    # LLM integration
 │   │   │   └── vlm_client.py    # Vision model integration
 │   │   ├── db/                  # Database layer
 │   │   │   ├── models.py        # SQLAlchemy models
 │   │   │   ├── schema.py        # Pydantic schemas
+│   │   │   ├── serializers.py   # Unified serializers (NEW)
 │   │   │   ├── session.py       # DB session management
 │   │   │   ├── crud_recipes.py  # Recipe CRUD operations
 │   │   │   ├── crud_chat.py     # Chat history operations
 │   │   │   └── crud_menus.py    # Menu planning operations
 │   │   ├── utils/               # Utilities
+│   │   │   ├── json_parser.py        # Robust JSON extraction (NEW)
 │   │   │   ├── nutrition_lookup.py   # Fuzzy nutrition matching
 │   │   │   ├── recipe_parser.py      # Recipe text parsing
-│   │   │   ├── text_cleaning.py      # Text preprocessing
+│   │   │   ├── text_cleaning.py      # Text preprocessing (enhanced)
 │   │   │   ├── unit_conversion.py    # Unit conversions
 │   │   │   └── prompt_loader.py      # Prompt management
 │   │   └── prompts/             # AI prompts
@@ -485,6 +601,8 @@ Foodify/
 │   │       └── rag_prompts.json
 │   ├── tests/                   # Unit tests
 │   ├── requirements.txt         # Python dependencies
+│   ├── Dockerfile              # Backend Docker image (NEW)
+│   ├── .dockerignore           # Docker ignore patterns (NEW)
 │   └── foodify.db              # SQLite database
 │
 ├── frontend/                    # Next.js Frontend
@@ -508,6 +626,9 @@ Foodify/
 │   │   └── utils.ts            # Helper functions
 │   ├── public/                  # Static assets
 │   ├── package.json            # Node dependencies
+│   ├── next.config.ts          # Next.js config (standalone)
+│   ├── Dockerfile              # Frontend Docker image (NEW)
+│   ├── .dockerignore           # Docker ignore patterns (NEW)
 │   └── tsconfig.json           # TypeScript config
 │
 ├── data/                        # Data files
@@ -515,84 +636,17 @@ Foodify/
 │   └── nutrition_eda.ipynb     # Data exploration notebook
 │
 ├── chroma_db/                   # ChromaDB vector store
-├── setup.sh                     # Automated setup script
+├── docker-compose.yml           # Docker orchestration (NEW)
+├── .dockerignore               # Root Docker ignore (NEW)
 ├── start.sh                     # Application start script
-└── README.md                    # This file
+└── README.md                    # This file (UPDATED)
 ```
 
----
 
-## ⚙️ Configuration
-
-### Backend Environment Variables (`.env`)
-
-```env
-# API Configuration
-API_HOST=0.0.0.0
-API_PORT=8000
-
-# Database
-DATABASE_URL=sqlite:///./foodify.db
-
-# Data Sources
-NUTRITION_DATA_PATH=../data/nutrition_data.csv
-
-# LLM Configuration
-LLM_PROVIDER=ollama
-LLM_BASE_URL=http://localhost:11434
-LLM_MODEL=llama3.2
-LLM_TEMPERATURE=0.7
-LLM_MAX_TOKENS=2048
-
-# Vision Language Model
-VLM_PROVIDER=ollama
-VLM_BASE_URL=http://localhost:11434
-VLM_MODEL=llama3.2-vision
-VLM_TEMPERATURE=0.5
-
-# Vector Store (RAG)
-CHROMA_PERSIST_DIRECTORY=./chroma_db
-EMBEDDING_MODEL=all-MiniLM-L6-v2
-
-# Optional: External APIs
-# YOUTUBE_API_KEY=your_key_here  # For enhanced video extraction
-```
-
-### Frontend Environment Variables (`.env.local`)
-
-```env
-# Backend API URL
-NEXT_PUBLIC_API_URL=http://localhost:8000/api
-
-# Optional: Analytics
-# NEXT_PUBLIC_GA_ID=your_google_analytics_id
-```
-
-### Customization Options
-
-#### Switch AI Models
-
-To use different Ollama models, update `.env`:
-```env
-# For faster inference (smaller model)
-LLM_MODEL=llama3.2:1b
-VLM_MODEL=llava
-
-# For better quality (larger model)
-LLM_MODEL=llama3.2:70b
-VLM_MODEL=llama3.2-vision:90b
-```
-
-#### Configure RAG System
-
-Adjust vector store settings in `backend/app/services/recipe_vectorstore.py`:
+Change embedding model in `backend/app/core/config.py`:
 ```python
-# Change embedding model
-EMBEDDING_MODEL = "all-mpnet-base-v2"  # Better quality
-
-# Adjust search parameters
-TOP_K = 10  # Return more results
-SIMILARITY_THRESHOLD = 0.7  # Stricter matching
+embedding_model: str = "all-mpnet-base-v2"  # Better quality
+# or "all-MiniLM-L6-v2" for faster inference
 ```
 
 ---
@@ -638,13 +692,20 @@ npm run lint
 
 - **Nutrition Accuracy**: Values are estimates based on fuzzy matching; not medical-grade
 - **AI Dependency**: Quality depends on Ollama model performance
-- **Local Processing**: Requires local compute resources for AI models
+- **Local Processing**: Requires local compute resources for AI models (Docker deployment simplifies this)
 - **Simple Unit Conversion**: Basic metric/imperial conversions only
-- **No User Authentication**: Single-user MVP design
-- **Limited Recipe Database**: Initial RAG system needs more recipe data
+- **No User Authentication**: Single-user design (production-ready architecture for future multi-user)
+- **SQLite Database**: Suitable for demo/MVP; PostgreSQL recommended for production scale
 
 ### Planned Enhancements
 
+**Infrastructure & Scaling**
+- [ ] PostgreSQL migration for production scale
+- [ ] Redis caching for improved performance
+- [ ] Kubernetes deployment configurations
+- [ ] CI/CD pipeline (GitHub Actions)
+
+**Features**
 - [ ] User authentication and multi-user support
 - [ ] Recipe favorites and collections
 - [ ] Shopping list generation with grocery store integration
@@ -693,10 +754,13 @@ This project is licensed under the MIT License - see the LICENSE file for detail
 
 Built as a technical showcase demonstrating:
 - Full-stack development (Python + TypeScript)
-- AI/ML integration (LLMs, Vision Models, RAG)
+- AI/ML integration (LLMs, Vision Models, Full RAG)
 - Modern web architecture (FastAPI + Next.js)
 - Data engineering (ETL, vector databases)
 - API design and documentation
+- DevOps & Containerization (Docker, Docker Compose)
+- Code quality & maintainability (DRY, modular architecture)
+- Production-ready deployment strategies
 
 ---
 
