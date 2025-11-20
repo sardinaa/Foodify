@@ -22,6 +22,7 @@ type Message = {
   timestamp: Date;
   recipes?: ChatRecipe[];
   isWeeklyMenu?: boolean; // Flag for weekly menu display
+  imageUrl?: string; // For displaying uploaded images
 };
 
 export default function ChatPage() {
@@ -54,11 +55,15 @@ export default function ChatPage() {
   const handleSend = async () => {
     if (!input.trim() && !selectedImage) return;
 
+    // Store image preview URL before clearing
+    const savedImagePreview = imagePreview;
+
     const userMessage: Message = {
       id: Date.now().toString(),
       role: 'user',
-      content: selectedImage ? `[Image uploaded] ${input || 'What can I make with this?'}` : input,
+      content: input || (selectedImage ? 'What can I make with this?' : ''),
       timestamp: new Date(),
+      imageUrl: savedImagePreview || undefined,
     };
 
     setMessages((prev) => [...prev, userMessage]);
@@ -292,7 +297,18 @@ export default function ChatPage() {
                     }`}
                   >
                     {message.role === 'user' ? (
-                      <p className="whitespace-pre-wrap">{message.content}</p>
+                      <>
+                        {message.imageUrl && (
+                          <div className="mb-2">
+                            <img 
+                              src={message.imageUrl} 
+                              alt="Uploaded food" 
+                              className="rounded-lg max-w-xs max-h-60 object-cover"
+                            />
+                          </div>
+                        )}
+                        <p className="whitespace-pre-wrap">{message.content}</p>
+                      </>
                     ) : (
                       <MarkdownRenderer content={message.content} />
                     )}
