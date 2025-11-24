@@ -17,11 +17,11 @@ export default function RecipesPage() {
   const [favorites, setFavorites] = useState<Set<string>>(new Set());
   const [currentPage, setCurrentPage] = useState(1);
   const [totalRecipes, setTotalRecipes] = useState(0);
+  const [isInitialized, setIsInitialized] = useState(false);
   const recipesPerPage = 50;
   
   const [filters, setFilters] = useState<FilterState>({
     sourceType: 'all',
-    categories: [],
     keywords: [],
     maxCalories: 2000,
     minProtein: 0,
@@ -29,15 +29,56 @@ export default function RecipesPage() {
     maxFat: 100,
   });
 
+  // Load state from session storage on mount
+  useEffect(() => {
+    const savedState = sessionStorage.getItem('recipeState');
+    if (savedState) {
+      try {
+        const parsed = JSON.parse(savedState);
+        setSearchQuery(parsed.searchQuery || '');
+        setFilters(parsed.filters || {
+          sourceType: 'all',
+          keywords: [],
+          maxCalories: 2000,
+          minProtein: 0,
+          maxCarbs: 300,
+          maxFat: 100,
+        });
+        setCurrentPage(parsed.currentPage || 1);
+        setRecipes(parsed.recipes || []);
+        setTotalRecipes(parsed.totalRecipes || 0);
+        setViewMode(parsed.viewMode || 'grid');
+      } catch (e) {
+        console.error("Failed to parse saved state", e);
+      }
+    }
+    setIsInitialized(true);
+  }, []);
+
+  // Save state to session storage
+  useEffect(() => {
+    if (!isInitialized) return;
+    const state = {
+      searchQuery,
+      filters,
+      currentPage,
+      recipes,
+      totalRecipes,
+      viewMode
+    };
+    sessionStorage.setItem('recipeState', JSON.stringify(state));
+  }, [searchQuery, filters, currentPage, recipes, totalRecipes, viewMode, isInitialized]);
+
   // Fetch recipes when filters or search changes
   useEffect(() => {
+    if (!isInitialized) return;
+
     const fetchRecipes = async () => {
       setIsLoading(true);
       try {
         const searchFilters: RecipeSearchFilters = {
           search: searchQuery || undefined,
           source_type: filters.sourceType === 'all' ? undefined : filters.sourceType,
-          categories: filters.categories.length > 0 ? filters.categories : undefined,
           keywords: filters.keywords.length > 0 ? filters.keywords : undefined,
           max_calories: filters.maxCalories !== 2000 ? filters.maxCalories : undefined,
           min_protein: filters.minProtein > 0 ? filters.minProtein : undefined,
@@ -53,34 +94,34 @@ export default function RecipesPage() {
       } catch (error) {
         console.error('Failed to fetch recipes:', error);
         // Use placeholder data on error
-        setRecipes([
-          {
-            id: '1',
-            name: 'Grilled Chicken Salad',
-            category: 'Chicken',
-            source: 'dataset',
-            calories: 450,
-            protein: 35,
-            carbs: 25,
-            fat: 18,
-            time: 30,
-            servings: 2,
-            keywords: ['Healthy', 'High Protein', 'Quick'],
-          },
-          {
-            id: '2',
-            name: 'Chocolate Brownies',
-            category: 'Dessert',
-            source: 'mine',
-            calories: 320,
-            protein: 5,
-            carbs: 45,
-            fat: 15,
-            time: 45,
-            servings: 12,
-            keywords: ['Dessert', 'Chocolate', 'Easy'],
-          },
-        ] as RecipeSearchResult[]);
+        if (recipes.length === 0) {
+          setRecipes([
+            {
+              id: '1',
+              name: 'Grilled Chicken Salad',
+              source: 'dataset',
+              calories: 450,
+              protein: 35,
+              carbs: 25,
+              fat: 18,
+              time: 30,
+              servings: 2,
+              keywords: ['Healthy', 'High Protein', 'Quick'],
+            },
+            {
+              id: '2',
+              name: 'Chocolate Brownies',
+              source: 'mine',
+              calories: 320,
+              protein: 5,
+              carbs: 45,
+              fat: 15,
+              time: 45,
+              servings: 12,
+              keywords: ['Dessert', 'Chocolate', 'Easy'],
+            },
+          ] as RecipeSearchResult[]);
+        }
       } finally {
         setIsLoading(false);
       }
@@ -89,22 +130,19 @@ export default function RecipesPage() {
     // Debounce search
     const timeoutId = setTimeout(fetchRecipes, 300);
     return () => clearTimeout(timeoutId);
-  }, [searchQuery, filters, currentPage]);
+  }, [searchQuery, filters, currentPage, isInitialized]);
 
   const activeFilterCount = 
     (filters.sourceType !== 'all' ? 1 : 0) +
-    filters.categories.length +
     filters.keywords.length +
     (filters.maxCalories !== 2000 ? 1 : 0) +
     (filters.minProtein > 0 ? 1 : 0) +
     (filters.maxCarbs !== 300 ? 1 : 0) +
     (filters.maxFat !== 100 ? 1 : 0);
 
-  const removeFilter = (type: 'source' | 'category' | 'keyword', value?: string) => {
+  const removeFilter = (type: 'source' | 'keyword', value?: string) => {
     if (type === 'source') {
       setFilters({ ...filters, sourceType: 'all' });
-    } else if (type === 'category' && value) {
-      setFilters({ ...filters, categories: filters.categories.filter(c => c !== value) });
     } else if (type === 'keyword' && value) {
       setFilters({ ...filters, keywords: filters.keywords.filter(k => k !== value) });
     }
@@ -131,7 +169,6 @@ export default function RecipesPage() {
       setSelectedRecipe({
         id: fullRecipe.id,
         name: fullRecipe.name,
-        category: fullRecipe.category,
         source: fullRecipe.source,
         calories: fullRecipe.calories,
         protein: fullRecipe.protein,
@@ -154,7 +191,6 @@ export default function RecipesPage() {
       setSelectedRecipe({
         id: recipe.id,
         name: recipe.name,
-        category: recipe.category,
         source: recipe.source,
         calories: recipe.calories,
         protein: recipe.protein,
@@ -187,18 +223,18 @@ export default function RecipesPage() {
         <div className="bg-white rounded-lg border border-gray-200 p-4 mb-6">
           <div className="flex gap-4 items-center">
             <div className="flex-1 relative">
-              <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" size={20} />
+              <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-500" size={20} />
               <input
                 type="text"
                 placeholder="Search by name, ingredient, or cuisine..."
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
-                className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:border-transparent"
+                className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:border-transparent text-gray-900 placeholder-gray-500"
               />
             </div>
             <button 
               onClick={() => setIsFilterOpen(!isFilterOpen)}
-              className="flex items-center gap-2 px-4 py-2 border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors relative"
+              className="flex items-center gap-2 px-4 py-2 border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors relative text-gray-800"
             >
               <Filter size={20} />
               <span className="hidden sm:inline">Filters</span>
@@ -211,13 +247,13 @@ export default function RecipesPage() {
             <div className="flex gap-1 border border-gray-300 rounded-lg overflow-hidden">
               <button
                 onClick={() => setViewMode('grid')}
-                className={`p-2 ${viewMode === 'grid' ? 'bg-emerald-50 text-emerald-600' : 'text-gray-600 hover:bg-gray-50'}`}
+                className={`p-2 ${viewMode === 'grid' ? 'bg-emerald-50 text-emerald-600' : 'text-gray-800 hover:bg-gray-50'}`}
               >
                 <Grid3x3 size={20} />
               </button>
               <button
                 onClick={() => setViewMode('list')}
-                className={`p-2 ${viewMode === 'list' ? 'bg-emerald-50 text-emerald-600' : 'text-gray-600 hover:bg-gray-50'}`}
+                className={`p-2 ${viewMode === 'list' ? 'bg-emerald-50 text-emerald-600' : 'text-gray-800 hover:bg-gray-50'}`}
               >
                 <List size={20} />
               </button>
@@ -235,14 +271,6 @@ export default function RecipesPage() {
                   </button>
                 </span>
               )}
-              {filters.categories.map(cat => (
-                <span key={cat} className="px-3 py-1 bg-emerald-50 text-emerald-700 rounded-full text-sm font-medium flex items-center gap-2">
-                  {cat}
-                  <button onClick={() => removeFilter('category', cat)} className="hover:bg-emerald-100 rounded-full">
-                    <X size={14} />
-                  </button>
-                </span>
-              ))}
               {filters.keywords.map(keyword => (
                 <span key={keyword} className="px-3 py-1 bg-purple-50 text-purple-700 rounded-full text-sm font-medium flex items-center gap-2">
                   {keyword}
@@ -281,7 +309,7 @@ export default function RecipesPage() {
 
           {/* Recipe Grid/List */}
           <div className="flex-1">
-            {isLoading ? (
+            {isLoading && recipes.length === 0 ? (
               <div className="flex items-center justify-center h-64">
                 <div className="text-gray-500">Loading recipes...</div>
               </div>
@@ -329,7 +357,7 @@ export default function RecipesPage() {
             <button
               onClick={() => setCurrentPage(p => Math.max(1, p - 1))}
               disabled={currentPage === 1}
-              className="flex items-center gap-2 px-4 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-lg hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed"
+              className="flex items-center gap-2 px-4 py-2 text-sm font-medium text-gray-900 bg-white border border-gray-300 rounded-lg hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed"
             >
               <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
@@ -337,7 +365,7 @@ export default function RecipesPage() {
               Previous
             </button>
             
-            <div className="text-sm text-gray-700">
+            <div className="text-sm text-gray-900">
               Page <span className="font-medium">{currentPage}</span> of{' '}
               <span className="font-medium">{Math.ceil(totalRecipes / recipesPerPage)}</span>
               {' '}({totalRecipes} recipes)
@@ -346,7 +374,7 @@ export default function RecipesPage() {
             <button
               onClick={() => setCurrentPage(p => Math.min(Math.ceil(totalRecipes / recipesPerPage), p + 1))}
               disabled={currentPage >= Math.ceil(totalRecipes / recipesPerPage)}
-              className="flex items-center gap-2 px-4 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-lg hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed"
+              className="flex items-center gap-2 px-4 py-2 text-sm font-medium text-gray-900 bg-white border border-gray-300 rounded-lg hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed"
             >
               Next
               <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">

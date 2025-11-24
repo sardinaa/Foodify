@@ -139,7 +139,6 @@ def main(reset: bool = False, max_recipes: int = None):
                     name=name,
                     description=description,
                     servings=int(float(item.get('servings') or item.get('RecipeServings') or 4)),
-                    total_time_minutes=int(float(item.get('total_time_minutes') or item.get('TotalTimeInMinutes') or 0)),
                     source_type="dataset",
                     category=item.get('category') or item.get('RecipeCategory'),
                     cuisine_type=item.get('cuisine_type'),
@@ -238,16 +237,15 @@ def main(reset: bool = False, max_recipes: int = None):
                     "diet_labels": diet_labels,
                     "health_labels": health_labels,
                     "servings": recipe.servings,
-                    "calories": nutrition.kcal_total,
-                    "protein": nutrition.protein_total,
-                    "carbs": nutrition.carbs_total,
-                    "fat": nutrition.fat_total,
-                    "fiber": nutrition.fiber,
-                    "sugar": nutrition.sugar,
-                    "saturated_fat": nutrition.saturated_fat,
-                    "cholesterol": nutrition.cholesterol,
-                    "sodium": nutrition.sodium,
-                    "total_time_minutes": recipe.total_time_minutes
+                    "calories": nutrition.kcal_per_serving,
+                    "protein": nutrition.protein_per_serving,
+                    "carbs": nutrition.carbs_per_serving,
+                    "fat": nutrition.fat_per_serving,
+                    "fiber": nutrition.fiber / (recipe.servings or 1),
+                    "sugar": nutrition.sugar / (recipe.servings or 1),
+                    "saturated_fat": nutrition.saturated_fat / (recipe.servings or 1),
+                    "cholesterol": nutrition.cholesterol / (recipe.servings or 1),
+                    "sodium": nutrition.sodium / (recipe.servings or 1),
                 }
                 recipes_for_vector.append(vector_recipe)
                 

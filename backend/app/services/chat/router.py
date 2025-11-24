@@ -12,7 +12,6 @@ from app.services.conversation_memory import ConversationMemory
 Handler = Callable[[Session, str, str, ConversationMemory | None], Awaitable[Dict]]
 
 _HANDLER_PATHS: Dict[str, str] = {
-    "url_analysis": "app.services.chat_agent:handle_url_analysis_mode",
     "modification": "app.services.chat_agent:handle_modification_mode",
     # "ingredients" intent now handled by default recipe_search (full RAG handles it)
     "weekly_menu": "app.services.chat_agent:handle_weekly_menu_mode",

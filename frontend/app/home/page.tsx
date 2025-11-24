@@ -129,7 +129,6 @@ export default function HomePage() {
       setSelectedRecipe({
         id: fullRecipe.id,
         name: fullRecipe.name,
-        category: fullRecipe.category,
         source: fullRecipe.source || 'dataset',
         description: fullRecipe.description || '',
         ingredients: fullRecipe.ingredients || [],

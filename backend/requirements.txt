@@ -18,8 +18,8 @@ h2==4.1.0            # HTTP/2 support
 socksio==1.0.0       # SOCKS proxy support
 
 # Video transcript extraction (optional but recommended for social media)
-yt-dlp>=2024.1.0     # Download audio from videos (YouTube, TikTok, Instagram, etc.)
-faster-whisper>=1.0.0  # Fast local speech-to-text transcription
+# yt-dlp>=2024.1.0     # Download audio from videos (YouTube, TikTok, Instagram, etc.)
+# faster-whisper>=1.0.0  # Fast local speech-to-text transcription
 
 # RAG System for Recipe Recommendations
 datasets>=4.4.1      # Hugging Face datasets for loading recipe data

@@ -1,10 +1,10 @@
 # 🍳 Foodify - AI-Powered Food Assistant
 
-**Foodify** is an intelligent food companion that leverages AI to transform how you interact with recipes and meal planning. Upload food images, extract recipes from URLs, get personalized recipe recommendations, and plan your weekly meals—all powered by local LLM and Vision Language Models.
+**Foodify** is an intelligent food companion that leverages AI to transform how you interact with recipes and meal planning. Get personalized recipe recommendations and plan your weekly meals—all powered by local LLM.
 
 <div align="center">
 
-![Status](https://img.shields.io/badge/Status-Production%20Ready-success)
+![Status](https://img.shields.io/badge/Status-MVP-success)
 ![Python](https://img.shields.io/badge/Python-3.10%2B-blue)
 ![Node](https://img.shields.io/badge/Node-18%2B-green)
 ![Docker](https://img.shields.io/badge/Docker-Ready-blue)
@@ -14,21 +14,7 @@
 
 ---
 
-## �🌟 Features
-
-### 📸 **Image Analysis Pipeline**
-Upload a photo of any dish and let AI do the magic:
-- **Visual Recognition**: AI identifies the dish and analyzes ingredients
-- **Recipe Generation**: Creates detailed step-by-step cooking instructions
-- **Nutrition Calculation**: Provides comprehensive nutritional breakdown (calories, protein, carbs, fats, fiber)
-- **Smart Matching**: Uses fuzzy matching against 2,395+ food items for accurate nutrition data
-
-### 🔗 **URL Recipe Extraction**
-Extract recipes from your favorite sources:
-- **Multi-Platform Support**: YouTube, Instagram, TikTok, food blogs
-- **Video Transcription**: Extracts recipes from video content using speech-to-text
-- **Social Media Scraping**: Pulls recipes from Instagram posts and stories
-- **Structured Parsing**: Converts unstructured content into organized recipes with ingredients and steps
+## 🌟 Features
 
 ### 🤖 **Intelligent Chat Agent**
 Two powerful modes for personalized assistance:
@@ -74,22 +60,19 @@ Production-ready containerization:
 │              Backend (FastAPI + Python 3.11)              │
 │  ┌───────────────────────────────────────────────────┐   │
 │  │  API Routes Layer                                  │   │
-│  │  - Image Analysis   - URL Extraction              │   │
 │  │  - Chat Agent       - RAG Search                  │   │
 │  └───────────────────────────────────────────────────┘   │
 │  ┌───────────────────────────────────────────────────┐   │
 │  │  Service Layer (Refactored & Modular)             │   │
-│  │  - Pipelines: image_pipeline, url_pipeline        │   │
-│  │  - Chat: intent, router, helpers (new modules)    │   │
+│  │  - Chat: intent, router, helpers                  │   │
 │  │  - RAG: Full context retrieval + generation       │   │
-│  │  - Scrapers: Social media, video transcription    │   │
 │  │  - Memory: Conversation context management        │   │
 │  └───────────────────────────────────────────────────┘   │
 │  ┌───────────────────────────────────────────────────┐   │
 │  │  Core & Utils (Enhanced)                          │   │
-│  │  - LLM/VLM Clients  - Constants (NEW)             │   │
-│  │  - Config (relative paths) - Serializers (NEW)    │   │
-│  │  - JSON Parser (NEW) - Prompt Loader              │   │
+│  │  - LLM Clients      - Constants                   │   │
+│  │  - Config (relative paths) - Serializers          │   │
+│  │  - JSON Parser      - Prompt Loader               │   │
 │  └───────────────────────────────────────────────────┘   │
 │  ┌───────────────────────────────────────────────────┐   │
 │  │  Database Layer (SQLAlchemy + SQLite)             │   │
@@ -101,7 +84,7 @@ Production-ready containerization:
       │                │                │
   ┌───┴────┐    ┌──────┴──────┐   ┌────┴────┐
   │Ollama  │    │  ChromaDB   │   │ SQLite  │
-  │LLM/VLM │    │(Embeddings) │   │   DB    │
+  │LLM     │    │(Embeddings) │   │   DB    │
   │(Host)  │    │  + Full RAG │   │         │
   └────────┘    └─────────────┘   └─────────┘
 
@@ -124,12 +107,10 @@ Docker Deployment (Optional):
 **Backend** (Production-Ready)
 - **Framework**: FastAPI (async Python 3.11+)
 - **Database**: SQLite with SQLAlchemy ORM + unified serializers
-- **AI Models**: Ollama (local LLM & Vision models)
+- **AI Models**: Ollama (local LLM)
 - **Vector DB**: ChromaDB for semantic search + cached instance
 - **RAG System**: Full RAG implementation (retrieval + augmentation + generation)
 - **Data Processing**: Pandas, RapidFuzz (fuzzy matching)
-- **Web Scraping**: BeautifulSoup4, httpx, yt-dlp
-- **Transcription**: Faster-Whisper for video-to-text
 - **Configuration**: Centralized constants, relative paths
 - **Code Quality**: Modular architecture, DRY principles
 
@@ -197,15 +178,12 @@ Before you begin, ensure you have the following installed:
 ```bash
 # Language model for chat and text processing
 ollama pull llama3.2
-
-# Vision model for image analysis
-ollama pull llama3.2-vision
 ```
 
 3. **Verify Installation**:
 ```bash
 ollama list
-# Should show: llama3.2 and llama3.2-vision
+# Should show: llama3.2
 ```
 
 ### 2️⃣ Deploy with Docker Compose
@@ -383,46 +361,6 @@ For production deployments:
 
 ## �📖 How to Use
 
-### 📸 Image Analysis
-
-1. **Navigate to the Image Analysis tab** in the web interface
-2. **Upload a food image** - drag & drop or click to select
-3. **Add optional context** - provide a dish name or description for better results
-4. **Analyze** - Click the analyze button and wait for AI processing
-5. **View Results**:
-   - Dish name and description
-   - Complete ingredient list with quantities
-   - Step-by-step cooking instructions
-   - Nutritional breakdown (calories, protein, carbs, fats, fiber)
-   - Per-serving and total nutrition values
-
-**Example Use Cases:**
-- Identify unknown dishes from restaurant photos
-- Extract recipes from cookbook images
-- Get nutrition info for homemade meals
-- Analyze ingredient composition
-
-### 🔗 URL Recipe Extraction
-
-1. **Navigate to the URL Analysis tab**
-2. **Paste a recipe URL** from supported platforms:
-   - YouTube recipe videos
-   - Instagram recipe posts
-   - TikTok cooking videos
-   - Food blogs and recipe websites
-3. **Extract** - Click to process the URL
-4. **Review Results**:
-   - Automatically parsed ingredients
-   - Organized cooking steps
-   - Estimated prep/cook time
-   - Nutritional analysis
-
-**Supported Sources:**
-- YouTube (video transcription)
-- Instagram (post scraping)
-- TikTok (video content)
-- Recipe websites (structured data extraction)
-
 ### 💬 Chat & Planning
 
 #### Mode 1: Fridge-to-Recipes
@@ -454,51 +392,6 @@ For production deployments:
 ## 🔌 API Reference
 
 ### Core Endpoints
-
-#### `POST /api/image/analyze`
-Analyze a food image and extract recipe with nutrition.
-
-**Request:**
-```json
-{
-  "image": "base64_encoded_image_data",
-  "title": "Optional dish name"
-}
-```
-
-**Response:**
-```json
-{
-  "recipe_name": "Spaghetti Carbonara",
-  "ingredients": [...],
-  "instructions": [...],
-  "nutrition": {
-    "per_serving": {...},
-    "total": {...}
-  }
-}
-```
-
-#### `POST /api/url/analyze`
-Extract recipe from a URL (video, social media, blog).
-
-**Request:**
-```json
-{
-  "url": "https://youtube.com/watch?v=...",
-  "platform": "youtube"
-}
-```
-
-**Response:**
-```json
-{
-  "recipe_name": "...",
-  "ingredients": [...],
-  "instructions": [...],
-  "nutrition": {...}
-}
-```
 
 #### `POST /api/chat`
 Interact with the chat agent for recipe suggestions or meal planning.
@@ -562,53 +455,38 @@ Foodify/
 │   ├── app/
 │   │   ├── main.py              # Application entry point
 │   │   ├── api/                 # API route handlers
-│   │   │   ├── routes_image.py  # Image analysis endpoints
-│   │   │   ├── routes_url.py    # URL extraction endpoints
 │   │   │   ├── routes_chat.py   # Chat agent endpoints
-│   │   │   └── routes_rag.py    # Full RAG endpoints (UPDATED)
+│   │   │   ├── routes_rag.py    # Full RAG endpoints
+│   │   │   └── routes_recipes.py # Recipe management endpoints
 │   │   ├── services/            # Business logic
-│   │   │   ├── image_pipeline.py          # Image-to-recipe pipeline
-│   │   │   ├── url_pipeline.py            # URL extraction pipeline
-│   │   │   ├── chat_agent.py              # Chat agent (REFACTORED)
-│   │   │   ├── chat/                      # Chat modules (NEW)
+│   │   │   ├── chat_agent.py              # Chat agent
+│   │   │   ├── chat/                      # Chat modules
 │   │   │   │   ├── intent.py              # Intent detection
 │   │   │   │   ├── router.py              # Handler routing
 │   │   │   │   └── helpers.py             # Common chat helpers
-│   │   │   ├── ingestion/                 # Ingestion modules (NEW)
-│   │   │   │   └── base.py                # Shared recipe persistence
-│   │   │   ├── recipe_rag.py              # Full RAG system (ENHANCED)
-│   │   │   ├── recipe_vectorstore.py      # Vector DB (cached)
-│   │   │   ├── social_media_scraper.py    # Social media extraction
-│   │   │   ├── video_transcript.py        # Video transcription
+│   │   │   ├── recipe_rag.py              # Full RAG system
+│   │   │   ├── recipe_vectorstore.py      # Vector DB
 │   │   │   └── conversation_memory.py     # Chat context management
 │   │   ├── core/                # Core configurations
-│   │   │   ├── config.py        # App settings (relative paths)
-│   │   │   ├── constants.py     # Application constants (NEW)
-│   │   │   ├── llm_client.py    # LLM integration
-│   │   │   └── vlm_client.py    # Vision model integration
+│   │   │   ├── config.py        # App settings
+│   │   │   ├── constants.py     # Application constants
+│   │   │   └── llm_client.py    # LLM integration
 │   │   ├── db/                  # Database layer
 │   │   │   ├── models.py        # SQLAlchemy models
 │   │   │   ├── schema.py        # Pydantic schemas
-│   │   │   ├── serializers.py   # Unified serializers (NEW)
+│   │   │   ├── serializers.py   # Unified serializers
 │   │   │   ├── session.py       # DB session management
-│   │   │   ├── crud_recipes.py  # Recipe CRUD operations
-│   │   │   ├── crud_chat.py     # Chat history operations
-│   │   │   └── crud_menus.py    # Menu planning operations
+│   │   │   └── crud_recipes.py  # Recipe CRUD operations
 │   │   ├── utils/               # Utilities
-│   │   │   ├── json_parser.py        # Robust JSON extraction (NEW)
-│   │   │   ├── nutrition_lookup.py   # Fuzzy nutrition matching
-│   │   │   ├── recipe_parser.py      # Recipe text parsing
-│   │   │   ├── text_cleaning.py      # Text preprocessing (enhanced)
-│   │   │   ├── unit_conversion.py    # Unit conversions
+│   │   │   ├── json_parser.py        # Robust JSON extraction
 │   │   │   └── prompt_loader.py      # Prompt management
 │   │   └── prompts/             # AI prompts
 │   │       ├── llm_prompts.json
-│   │       ├── vlm_prompts.json
-│   │       └── rag_prompts.json
+│   │       ├── rag_prompts.json
 │   ├── tests/                   # Unit tests
 │   ├── requirements.txt         # Python dependencies
-│   ├── Dockerfile              # Backend Docker image (NEW)
-│   ├── .dockerignore           # Docker ignore patterns (NEW)
+│   ├── Dockerfile              # Backend Docker image
+│   ├── .dockerignore           # Docker ignore patterns
 │   └── foodify.db              # SQLite database
 │
 ├── frontend/                    # Next.js Frontend
@@ -619,8 +497,6 @@ Foodify/
 │   │   ├── recipes/            # Recipe browsing
 │   │   └── globals.css         # Global styles
 │   ├── components/              # React components
-│   │   ├── ImageAnalysis.tsx   # Image upload & analysis
-│   │   ├── UrlAnalysis.tsx     # URL extraction interface
 │   │   ├── ChatPlanning.tsx    # Chat interface
 │   │   ├── RecipeCard.tsx      # Recipe display card
 │   │   ├── RecipeDetailModal.tsx
@@ -633,8 +509,8 @@ Foodify/
 │   ├── public/                  # Static assets
 │   ├── package.json            # Node dependencies
 │   ├── next.config.ts          # Next.js config (standalone)
-│   ├── Dockerfile              # Frontend Docker image (NEW)
-│   ├── .dockerignore           # Docker ignore patterns (NEW)
+│   ├── Dockerfile              # Frontend Docker image
+│   ├── .dockerignore           # Docker ignore patterns
 │   └── tsconfig.json           # TypeScript config
 │
 ├── data/                        # Data files

@@ -2,7 +2,7 @@
 Application-wide constants.
 Centralizes all hardcoded values to prevent duplication and improve maintainability.
 """
-from typing import List, Dict
+from typing import List
 
 
 class MenuConstants:
@@ -60,61 +60,8 @@ class LimitsConstants:
     RAG_SIMILARITY_THRESHOLD: float = 0.5
 
 
-class HTTPConstants:
-    """HTTP headers and user agents for web scraping."""
-    
-    USER_AGENTS: List[str] = [
-        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
-        "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
-        "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
-    ]
-    
-    DEFAULT_HEADERS: Dict[str, str] = {
-        "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
-        "Accept-Language": "en-US,en;q=0.9,es;q=0.8",
-        "Accept-Encoding": "gzip, deflate, br",
-        "DNT": "1",
-        "Connection": "keep-alive",
-        "Upgrade-Insecure-Requests": "1",
-        "Referer": "https://www.google.com/"
-    }
-    
-    @classmethod
-    def get_headers_with_user_agent(cls, user_agent: str) -> Dict[str, str]:
-        """Get default headers with specified user agent."""
-        return {**cls.DEFAULT_HEADERS, "User-Agent": user_agent}
-
-
-class PromptConstants:
-    """Constants for LLM prompts and responses."""
-    
-    # Temperature settings
-    TEMPERATURE_CREATIVE: float = 0.7
-    TEMPERATURE_PRECISE: float = 0.1
-    TEMPERATURE_BALANCED: float = 0.5
-    
-    # Token limits
-    MAX_PROMPT_TOKENS: int = 4000
-    MAX_RESPONSE_TOKENS: int = 2000
-
-
-class DatabaseConstants:
-    """Database-related constants."""
-    
-    # Default values
-    DEFAULT_SERVINGS: int = 4
-    DEFAULT_TOTAL_TIME: int = 30
-    
-    # Batch sizes
-    BATCH_INSERT_SIZE: int = 100
-    BATCH_UPDATE_SIZE: int = 50
-
-
 # Export all constants for easy import
 __all__ = [
     'MenuConstants',
-    'LimitsConstants', 
-    'HTTPConstants',
-    'PromptConstants',
-    'DatabaseConstants'
+    'LimitsConstants'
 ]

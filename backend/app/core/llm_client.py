@@ -110,7 +110,6 @@ class LLMClient(BaseAIClient):
                 name=data.get("name", "Unknown Recipe"),
                 description=data.get("description"),
                 servings=data.get("servings", 4),
-                total_time_minutes=data.get("total_time_minutes", 30),
                 ingredients=ingredients,
                 steps=steps
             )
@@ -206,7 +205,6 @@ class LLMClient(BaseAIClient):
                         name=data.get("name", "Recipe"),
                         description=data.get("description"),
                         servings=data.get("servings", 4),
-                        total_time_minutes=data.get("total_time_minutes", 30),
                         ingredients=ingredients,
                         steps=steps
                     ))

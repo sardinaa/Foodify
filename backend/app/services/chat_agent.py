@@ -1,57 +1,357 @@
 """
 Simplified chat agent for conversational recipe assistance.
-Focuses on clean architecture with minimal duplication.
+Includes RAG helper functions for recipe recommendations.
 """
-from typing import Dict, Optional
+from typing import Dict, Optional, List, Any
 from sqlalchemy.orm import Session
+import logging
+import json
+import random
 
 from app.services.conversation_memory import ConversationMemory
 from app.services.chat.intent import analyze_conversation_context, detect_user_intent_with_llm
 from app.services.chat.router import dispatch_intent
 from app.services.chat.helpers import format_recipe_dict, create_error_response
 from app.core.constants import MenuConstants, LimitsConstants
-from app.utils.json_parser import parse_llm_json
+from app.utils.json_parser import parse_llm_json, safe_json_parse
 from app.core.logging import get_logger
+from app.services.recipe_vectorstore import get_vector_store
+from app.core.llm_client import get_llm_client
+from app.core.config import get_settings
+from app.utils.prompt_loader import get_prompt_loader
+from app.db.crud_recipes import get_recipe
+from app.db.schema import Recipe
 
 logger = get_logger("chat_agent")
 
+# Initialize shared resources
+_settings = get_settings()
+_vector_store = get_vector_store(
+    persist_directory=_settings.vector_store_path,
+    embedding_model=_settings.embedding_model
+)
+_llm_client = get_llm_client()
+_prompt_loader = get_prompt_loader()
 
-async def handle_url_analysis_mode(
-    db: Session,
-    session_id: str,
-    message: str,
-    memory: Optional[ConversationMemory] = None
-) -> Dict:
-    """Extract recipe from URL."""
-    from app.services.url_pipeline import analyze_url_pipeline
-    from app.services.chat.helpers import extract_urls
+
+# ============================================================================
+# RAG HELPER FUNCTIONS
+# ============================================================================
+
+def _model_to_dict(recipe_model) -> Dict[str, Any]:
+    """Convert recipe model from SQL database to dictionary."""
+    return Recipe.model_validate(recipe_model).model_dump(mode="json")
+
+
+def _metadata_to_dict(metadata: Dict[str, Any]) -> Dict[str, Any]:
+    """Convert ChromaDB metadata to dictionary with full nutrition and tags."""
+    # Parse JSON fields from ChromaDB metadata - handle both string and list formats
+    ingredients = metadata.get('ingredients', [])
+    if isinstance(ingredients, str):
+        ingredients = safe_json_parse(ingredients, fallback=[])
+    elif not isinstance(ingredients, list):
+        ingredients = []
     
-    urls = extract_urls(message)
-    if not urls:
-        return create_error_response(
-            "I couldn't find a valid URL in your message. Please provide a complete URL."
+    instructions = metadata.get('instructions', [])
+    if isinstance(instructions, str):
+        instructions = safe_json_parse(instructions, fallback=[])
+    elif not isinstance(instructions, list):
+        instructions = []
+    
+    keywords = metadata.get('keywords', [])
+    if isinstance(keywords, str):
+        keywords = safe_json_parse(keywords, fallback=[])
+    elif not isinstance(keywords, list):
+        keywords = []
+    
+    # Parse other label fields - handle both string and list formats
+    diet_labels = metadata.get('diet_labels', [])
+    if isinstance(diet_labels, str):
+        diet_labels = safe_json_parse(diet_labels, fallback=[])
+    elif not isinstance(diet_labels, list):
+        diet_labels = []
+    
+    health_labels = metadata.get('health_labels', [])
+    if isinstance(health_labels, str):
+        health_labels = safe_json_parse(health_labels, fallback=[])
+    elif not isinstance(health_labels, list):
+        health_labels = []
+    
+    dish_type = metadata.get('dish_type', [])
+    if isinstance(dish_type, str):
+        dish_type = safe_json_parse(dish_type, fallback=[])
+    elif not isinstance(dish_type, list):
+        dish_type = []
+    
+    cuisine_type = metadata.get('cuisine_type', [])
+    if isinstance(cuisine_type, str):
+        cuisine_type = safe_json_parse(cuisine_type, fallback=[])
+    elif not isinstance(cuisine_type, list):
+        cuisine_type = []
+    
+    meal_type = metadata.get('meal_type', [])
+    if isinstance(meal_type, str):
+        meal_type = safe_json_parse(meal_type, fallback=[])
+    elif not isinstance(meal_type, list):
+        meal_type = []
+    
+    # Combine all tags if keywords is empty
+    if not keywords:
+        keywords = []
+        keywords.extend(diet_labels)
+        keywords.extend(health_labels)
+        keywords.extend(dish_type)
+        keywords.extend(cuisine_type)
+        keywords.extend(meal_type)
+    
+    return {
+        "id": metadata.get('recipe_id', 0),
+        "name": metadata.get('name', 'Unknown'),
+        "description": metadata.get('description', ''),
+        "servings": int(metadata.get('servings', 4)),
+        "ingredients": [{"name": i, "quantity": None, "unit": None} if isinstance(i, str) else i for i in ingredients],
+        "steps": [{"step_number": idx+1, "instruction": s} if isinstance(s, str) else s for idx, s in enumerate(instructions)],
+        "tags": keywords,
+        "keywords": keywords,
+        "calories": float(metadata.get('calories', 0)),
+        "protein": float(metadata.get('protein', 0)),
+        "carbs": float(metadata.get('carbs', 0)),
+        "fat": float(metadata.get('fat', 0)),
+        "fiber": float(metadata.get('fiber', 0)),
+        "sugar": float(metadata.get('sugar', 0)),
+        "saturated_fat": float(metadata.get('saturated_fat', 0)),
+        "cholesterol": float(metadata.get('cholesterol', 0)),
+        "sodium": float(metadata.get('sodium', 0)),
+        "source_type": metadata.get('source_type', 'dataset'),
+        "created_at": None
+    }
+
+
+async def _extract_constraints(user_query: str) -> Dict[str, Any]:
+    """Extract constraints from user query using LLM."""
+    try:
+        config = _prompt_loader.get_llm_prompt("recipe_constraint_parser")
+        system_prompt = "\n".join(config.get("system", []))
+        user_template = "\n".join(config.get("user_template", []))
+        
+        prompt = _prompt_loader.format_prompt(
+            user_template,
+            user_query=user_query
         )
+        
+        response = await _llm_client.chat(
+            messages=[{"role": "user", "content": prompt}],
+            temperature=0.1,
+            system=system_prompt
+        )
+        
+        return parse_llm_json(response, fallback={
+            "dietary": [],
+            "max_calories": None,
+            "quantity": None,
+            "min_protein": None,
+            "max_carbs": None,
+            "max_fat": None,
+            "included_ingredients": [],
+            "excluded_ingredients": []
+        })
+    except Exception as e:
+        logger.error(f"Constraint extraction failed: {e}")
+        return {}
+
+
+def _apply_custom_filters(
+    recipes: List[Dict[str, Any]],
+    dietary_restrictions: Optional[List[str]] = None,
+    excluded_ingredients: Optional[List[str]] = None
+) -> List[Dict[str, Any]]:
+    """Apply custom filters that ChromaDB can't handle (text matching, complex logic)."""
+    filtered = []
+    
+    for recipe in recipes:
+        # Quality check: must have ingredients
+        ingredients = recipe.get('ingredients', [])
+        if isinstance(ingredients, str):
+            ingredients = safe_json_parse(ingredients, fallback=[])
+        elif not isinstance(ingredients, list):
+            ingredients = []
+        if not ingredients:
+            continue
+        
+        # Check ingredient exclusions
+        if excluded_ingredients:
+            ing_text = " ".join([str(i).lower() for i in ingredients])
+            if any(excl.lower() in ing_text for excl in excluded_ingredients):
+                continue
+        
+        # Check dietary restrictions
+        if dietary_restrictions:
+            keywords = recipe.get('keywords', [])
+            # Handle both list and JSON string formats
+            if isinstance(keywords, str):
+                keywords = safe_json_parse(keywords, fallback=[])
+            elif not isinstance(keywords, list):
+                keywords = []
+            keywords_lower = [k.lower() for k in keywords]
+            
+            matches = True
+            for restriction in dietary_restrictions:
+                restriction_lower = restriction.lower()
+                if restriction_lower not in keywords_lower:
+                    # Special handling for vegetarian/vegan
+                    if "vegetarian" in restriction_lower or "vegan" in restriction_lower:
+                        meat_keywords = ["chicken", "beef", "pork", "meat", "fish", "seafood"]
+                        if any(mk in keywords_lower for mk in meat_keywords):
+                            matches = False
+                            break
+            
+            if not matches:
+                continue
+        
+        filtered.append(recipe)
+    
+    return filtered
+
+
+async def _generate_simple_explanation(
+    user_query: str,
+    recipes: List[Dict[str, Any]],
+    system_instruction: Optional[str] = None,
+    constraints: Optional[Dict[str, Any]] = None
+) -> str:
+    """Generate a simple conversational explanation using LLM with minimal context."""
+    if not recipes:
+        return "I couldn't find any recipes matching your criteria. Try adjusting your constraints?"
+    
+    # Build minimal recipe summary
+    recipe_summaries = []
+    for i, r in enumerate(recipes, 1):
+        keywords = r.get('keywords', [])
+        if isinstance(keywords, str):
+            keywords = safe_json_parse(keywords, fallback=[])
+        elif not isinstance(keywords, list):
+            keywords = []
+        recipe_summaries.append(
+            f"{i}. {r['name']} ("
+            f"{r.get('calories', 0):.0f} cal, {', '.join(keywords[:3]) if keywords else 'no tags'})"
+        )
+    
+    # Build constraint summary
+    constraint_parts = []
+    if constraints:
+        if constraints.get('dietary'):
+            constraint_parts.append(f"dietary: {', '.join(constraints['dietary'])}")
+        if constraints.get('max_calories'):
+            constraint_parts.append(f"max {constraints['max_calories']} cal")
+        if constraints.get('excluded_ingredients'):
+            constraint_parts.append(f"without {', '.join(constraints['excluded_ingredients'])}")
+    
+    constraint_text = f" ({'; '.join(constraint_parts)})" if constraint_parts else ""
+    
+    # Simple prompt
+    prompt = f"""User asked: "{user_query}"{constraint_text}
+
+Found recipes:
+{chr(10).join(recipe_summaries)}
+
+{f'Note: {system_instruction}' if system_instruction else ''}
+
+Provide a friendly 2-3 sentence recommendation explaining why these recipes match and which might be best."""
     
     try:
-        recipe, nutrition, tags = await analyze_url_pipeline(db, urls[0])
-        recipe_dict = format_recipe_dict(recipe, nutrition, tags)
-        recipe_dict["source_type"] = "url"
-        recipe_dict["source_ref"] = urls[0]
-        
-        return {
-            "reply": f"Successfully extracted **{recipe.name}** from the URL!",
-            "suggested_recipes": [recipe_dict],
-            "weekly_menu": None
-        }
-    except Exception as e:
-        error_hints = {
-            "403": "The website is blocking automated access.",
-            "Could not extract": "No recipe found at this URL.",
-        }
-        hint = next((v for k, v in error_hints.items() if k in str(e)), "")
-        return create_error_response(
-            f"Failed to extract recipe. {hint} Try copying the recipe text directly!"
+        return await _llm_client.chat(
+            messages=[{"role": "user", "content": prompt}],
+            temperature=0.7
         )
+    except Exception as e:
+        logger.error(f"LLM explanation failed: {e}")
+        return f"I found {len(recipes)} great recipes for you! Check out the details below."
+
+
+async def _get_recipe_recommendations(
+    user_query: str,
+    db: Session,
+    dietary_restrictions: Optional[List[str]] = None,
+    max_calories: Optional[float] = None,
+    n_results: int = 5,
+    metadata_filter: Optional[Dict[str, Any]] = None,
+    system_instruction: Optional[str] = None,
+    min_protein: Optional[float] = None,
+    max_carbs: Optional[float] = None,
+    max_fat: Optional[float] = None,
+    included_ingredients: Optional[List[str]] = None,
+    excluded_ingredients: Optional[List[str]] = None
+) -> Dict[str, Any]:
+    """
+    Get recipe recommendations using streamlined RAG pipeline.
+    
+    Steps:
+    1. Semantic search via ChromaDB with nutritional filters
+    2. Apply custom filters (dietary, ingredients)
+    3. Convert to recipe dicts
+    4. Generate LLM explanation
+    """
+    logger.info(f"Getting recommendations for query: {user_query}")
+    
+    # Build filter for ChromaDB - let database do the heavy lifting
+    filter_dict = metadata_filter.copy() if metadata_filter else {}
+    if max_calories and "calories" not in filter_dict:
+        filter_dict["calories"] = {"$lte": max_calories}
+    if min_protein and "protein" not in filter_dict:
+        filter_dict["protein"] = {"$gte": min_protein}
+    if max_carbs and "carbs" not in filter_dict:
+        filter_dict["carbs"] = {"$lte": max_carbs}
+    if max_fat and "fat" not in filter_dict:
+        filter_dict["fat"] = {"$lte": max_fat}
+    
+    # Semantic search with nutritional pre-filtering
+    candidate_count = n_results * 2  # Small buffer for custom filtering
+    recipes_metadata = _vector_store.search_recipes(
+        query=user_query,  # Use user query directly - no transformation needed
+        n_results=candidate_count,
+        filter_dict=filter_dict if filter_dict else None
+    )
+    
+    logger.info(f"Found {len(recipes_metadata)} recipes from ChromaDB")
+    
+    # Apply custom filters (dietary, ingredients)
+    filtered_recipes = _apply_custom_filters(
+        recipes_metadata,
+        dietary_restrictions=dietary_restrictions,
+        excluded_ingredients=excluded_ingredients
+    )
+    
+    logger.info(f"After custom filtering: {len(filtered_recipes)} recipes")
+    
+    # Convert to full recipe dicts (use ChromaDB metadata directly - no SQL augmentation)
+    recipes = [_metadata_to_dict(r) for r in filtered_recipes[:n_results]]
+    
+    # Generate LLM explanation
+    explanation = await _generate_simple_explanation(
+        user_query=user_query,
+        recipes=recipes,
+        system_instruction=system_instruction,
+        constraints={
+            "dietary": dietary_restrictions,
+            "max_calories": max_calories,
+            "min_protein": min_protein,
+            "max_carbs": max_carbs,
+            "max_fat": max_fat,
+            "excluded_ingredients": excluded_ingredients
+        }
+    )
+    
+    return {
+        "query": user_query,
+        "recipes": recipes,
+        "explanation": explanation,
+        "total_results": len(recipes)
+    }
+
+
+# ============================================================================
+# CHAT HANDLERS
+# ============================================================================
 
 
 async def handle_recipe_search_mode(
@@ -61,19 +361,14 @@ async def handle_recipe_search_mode(
     memory: Optional[ConversationMemory] = None
 ) -> Dict:
     """Search recipes using full RAG with LLM-extracted constraints."""
-    from app.services.recipe_rag import RecipeRAGService
-    
     try:
-        rag_service = RecipeRAGService()
-        
-        # Use the unified constraint extraction from RAG service
-        constraints = await rag_service.extract_constraints(message)
+        # Use local constraint extraction
+        constraints = await _extract_constraints(message)
         
         logger.debug(f"[Recipe Search] Extracted constraints: {constraints}")
         
         # Extract specific constraints
         dietary = constraints.get("dietary", [])
-        max_time = constraints.get("max_time_minutes")
         max_calories = constraints.get("max_calories")
         quantity = constraints.get("quantity")
         min_protein = constraints.get("min_protein")
@@ -82,17 +377,7 @@ async def handle_recipe_search_mode(
         included_ingredients = constraints.get("included_ingredients", [])
         excluded_ingredients = constraints.get("excluded_ingredients", [])
         
-        logger.info(f"[Recipe Search] Extracted constraints - Time: {max_time}, Calories: {max_calories}, Dietary: {dietary}, Quantity: {quantity}, Protein: {min_protein}, Carbs: {max_carbs}, Fat: {max_fat}, Inc: {included_ingredients}, Exc: {excluded_ingredients}")
-        
-        # Update session preferences if new constraints found
-        if dietary or max_time or max_calories:
-            from app.db.crud_chat import update_session_preferences
-            update_session_preferences(
-                db, 
-                session_id, 
-                dietary_restrictions=dietary if dietary else None,
-                time_constraints=max_time
-            )
+        logger.info(f"[Recipe Search] Extracted constraints - Calories: {max_calories}, Dietary: {dietary}, Quantity: {quantity}, Protein: {min_protein}, Carbs: {max_carbs}, Fat: {max_fat}, Inc: {included_ingredients}, Exc: {excluded_ingredients}")
         
         # Determine number of results
         # Default to 3 if not specified, but respect user's request
@@ -109,12 +394,10 @@ async def handle_recipe_search_mode(
         else:
              system_instruction = f"The user did not specify a quantity, so I have provided {n_results} top recommendations."
         
-        # Build metadata filter for time constraint
+        # Build metadata filter
         metadata_filter = {}
-        if max_time:
-            metadata_filter["time"] = {"$lte": float(max_time)}
         
-        recommendations = await rag_service.get_recipe_recommendations(
+        recommendations = await _get_recipe_recommendations(
             user_query=message,
             db=db,
             dietary_restrictions=dietary if dietary else None,
@@ -150,26 +433,22 @@ async def handle_modification_mode(
     memory: Optional[ConversationMemory] = None
 ) -> Dict:
     """Modify recipes using LLM with conversation context."""
-    from app.core.llm_client import get_llm_client
     from app.services.chat.helpers import get_recipes_from_history
-    from app.services.recipe_rag import RecipeRAGService
-    import json
     from datetime import datetime
     
     # Get recipes from recent conversation
     previous_recipes = await get_recipes_from_history(memory)
     
-    # If no recipes, try RAG fallback
+    # If no recipes, try simple search fallback
     if not previous_recipes:
         try:
-            rag_service = RecipeRAGService()
-            search_results = await rag_service.search_recipes_with_full_context(
-                query=message, db=db, n_results=3
+            results = await _get_recipe_recommendations(
+                user_query=message, db=db, n_results=3
             )
-            if search_results:
+            if results.get('recipes'):
                 return {
                     "reply": "Which recipe would you like to modify? Please specify:",
-                    "suggested_recipes": search_results[:3],
+                    "suggested_recipes": results['recipes'],
                     "weekly_menu": None
                 }
         except:
@@ -185,22 +464,18 @@ async def handle_modification_mode(
     
     if action in ["show_recipe", "answer_question", "show_previous"]:
         # Use LLM to generate a specific answer based on the recipe
-        llm = get_llm_client()
-        from app.utils.prompt_loader import get_prompt_loader
-        
-        prompt_loader = get_prompt_loader()
-        qa_config = prompt_loader.get_llm_prompt("recipe_qa")
+        qa_config = _prompt_loader.get_llm_prompt("recipe_qa")
         system_prompt = "\n".join(qa_config.get("system", []))
         user_template = "\n".join(qa_config.get("user_template", []))
         
-        qa_prompt = prompt_loader.format_prompt(
+        qa_prompt = _prompt_loader.format_prompt(
             user_template,
             recipe_context=json.dumps(previous_recipes[0], indent=2),
             user_message=message
         )
         
         try:
-            qa_response = await llm.chat(
+            qa_response = await _llm_client.chat(
                 messages=[{"role": "user", "content": qa_prompt}],
                 temperature=0.3,
                 system=system_prompt
@@ -223,22 +498,18 @@ async def handle_modification_mode(
         }
     
     # Modify recipe using LLM with prompt template
-    llm = get_llm_client()
-    from app.utils.prompt_loader import get_prompt_loader
-    
-    prompt_loader = get_prompt_loader()
-    modification_config = prompt_loader.get_llm_prompt("recipe_modification")
+    modification_config = _prompt_loader.get_llm_prompt("recipe_modification")
     system_prompt = "\n".join(modification_config.get("system", []))
     user_template = "\n".join(modification_config.get("user_template", []))
     
-    user_prompt = prompt_loader.format_prompt(
+    user_prompt = _prompt_loader.format_prompt(
         user_template,
         original_recipe=json.dumps(previous_recipes[0], indent=2),
         user_request=message
     )
     
     try:
-        response = await llm.chat(
+        response = await _llm_client.chat(
             messages=[{"role": "user", "content": user_prompt}],
             temperature=0.3,
             system=system_prompt
@@ -252,7 +523,6 @@ async def handle_modification_mode(
             "name": result.get("name", "Modified Recipe"),
             "description": result.get("description", ""),
             "servings": result.get("servings", 4),
-            "total_time_minutes": result.get("total_time_minutes", 30),
             "ingredients": result.get("ingredients", []),
             "steps": result.get("steps", []),
             "source_type": "modified",
@@ -279,28 +549,32 @@ async def handle_weekly_menu_mode(
     memory: Optional[ConversationMemory] = None
 ) -> Dict:
     """Generate weekly menu using RAG."""
-    from app.services.recipe_rag import RecipeRAGService
-    from app.core.llm_client import get_llm_client
     from app.services.chat.helpers import get_recipes_from_history
-    import json
     
     try:
-        rag_service = RecipeRAGService()
-        llm = get_llm_client()
-        from app.utils.prompt_loader import get_prompt_loader
-        
+        # Get conversation history for context
+        history_context = ""
+        if memory:
+            history = await memory.get_conversation_history(limit=4)
+            history_lines = []
+            for msg in history:
+                role = "User" if msg["role"] == "user" else "Assistant"
+                content = msg["content"][:200]
+                history_lines.append(f"{role}: {content}")
+            history_context = "\n".join(history_lines)
+
         # Parse constraints using LLM with prompt template
-        prompt_loader = get_prompt_loader()
-        constraint_config = prompt_loader.get_llm_prompt("menu_constraint_parser")
+        constraint_config = _prompt_loader.get_llm_prompt("menu_constraint_parser")
         system_prompt = "\n".join(constraint_config.get("system", []))
         user_template = "\n".join(constraint_config.get("user_template", []))
         
-        parse_prompt = prompt_loader.format_prompt(
+        parse_prompt = _prompt_loader.format_prompt(
             user_template,
+            conversation_history=history_context,
             user_message=message
         )
         
-        llm_response = await llm.chat(
+        llm_response = await _llm_client.chat(
             messages=[{"role": "user", "content": parse_prompt}],
             temperature=0.1,
             system=system_prompt
@@ -311,7 +585,6 @@ async def handle_weekly_menu_mode(
             "days": MenuConstants.DEFAULT_DAYS,
             "meals": MenuConstants.DEFAULT_MEALS,
             "dietary": [],
-            "max_time_minutes": None,
             "max_calories": None,
             "other_preferences": ""
         }
@@ -320,73 +593,122 @@ async def handle_weekly_menu_mode(
         day_names = constraints.get("days", MenuConstants.DEFAULT_DAYS)
         meal_types = constraints.get("meals", MenuConstants.DEFAULT_MEALS)
         dietary = constraints.get("dietary", [])
-        max_time = constraints.get("max_time_minutes")
         max_calories = constraints.get("max_calories")
         other_prefs = constraints.get("other_preferences", "")
         use_history = constraints.get("use_history_recipes", False)
+        explicit_changes = constraints.get("explicit_changes", [])
         
-        logger.info(f"[Weekly Menu] Extracted constraints - Days: {len(day_names)}, Meals: {meal_types}, Time: {max_time}, Calories: {max_calories}, Dietary: {dietary}, Use History: {use_history}")
+        logger.info(f"[Weekly Menu] Extracted constraints - Days: {len(day_names)}, Meals: {meal_types}, Calories: {max_calories}, Dietary: {dietary}, Use History: {use_history}, Changes: {len(explicit_changes)}")
         
         # Check if user wants to use previous recipes
         previous_recipes = []
         
-        # Use LLM-detected intent to use history, or fallback to keyword check if LLM missed it
-        # but user explicitly mentioned "previous" or "history"
-        keyword_fallback = any(k in message.lower() for k in ["previous", "history", "these", "all recipes", "the recipes", "those recipes"])
-        
-        if use_history or keyword_fallback:
+        if use_history:
             previous_recipes = await get_recipes_from_history(memory, limit=10)
             logger.info(f"[Weekly Menu] Found {len(previous_recipes)} previous recipes to include")
 
         # Build metadata filter for ChromaDB
         metadata_filter = {}
-        if max_time:
-            metadata_filter["time"] = {"$lte": float(max_time)}
         if max_calories:
             metadata_filter["calories"] = {"$lte": float(max_calories)}
         
-        # Get recipes for each meal type
+        # Organize previous recipes for intelligent reuse
+        precise_matches = {}  # (day, meal_type) -> recipe
+        available_previous = [] # list of recipes
+        used_previous_ids = set()
+        
+        if previous_recipes:
+            for r in previous_recipes:
+                d = r.get("day_name")
+                m = r.get("meal_type")
+                if d and m:
+                    precise_matches[(d, m)] = r
+                available_previous.append(r)
+
         suggested_recipes = []
         
-        # If we have previous recipes, try to use them first
-        used_previous_indices = set()
-        
         for meal_type in meal_types:
-            query = f"{meal_type} recipes"
-            if dietary:
-                query += f" {' '.join(dietary)}"
-            if other_prefs:
-                query += f" {other_prefs}"
+            # Identify which days need a recipe for this meal_type
+            days_needing_recipe = []
+            current_meal_recipes_map = {} # day -> recipe
             
-            # Calculate how many new recipes we need
-            needed_count = len(day_names)
+            for day in day_names:
+                # 0. Check for explicit changes FIRST
+                explicit_change = next((c for c in explicit_changes if c.get("day") == day and c.get("meal") == meal_type), None)
+                
+                if explicit_change:
+                    # Fetch specific recipe for this slot
+                    change_query = f"{explicit_change.get('request')} recipe"
+                    logger.info(f"[Weekly Menu] Processing explicit change for {day} {meal_type}: {change_query}")
+                    
+                    change_result = await _get_recipe_recommendations(
+                        user_query=change_query,
+                        db=db,
+                        dietary_restrictions=dietary if dietary else None,
+                        max_calories=max_calories,
+                        n_results=1,
+                        metadata_filter=metadata_filter if metadata_filter else None
+                    )
+                    if change_result.get('recipes'):
+                        r = change_result['recipes'][0]
+                        current_meal_recipes_map[day] = r
+                        used_previous_ids.add(r.get("id"))
+                    else:
+                        # Fallback if search fails
+                        days_needing_recipe.append(day)
+                        
+                # 1. Try precise match (Same Day, Same Meal) - ONLY if not explicitly changed
+                elif (day, meal_type) in precise_matches:
+                    r = precise_matches[(day, meal_type)]
+                    current_meal_recipes_map[day] = r
+                    used_previous_ids.add(r.get("id"))
+                else:
+                    days_needing_recipe.append(day)
             
-            # Try to fill with previous recipes first if requested
-            current_meal_recipes = []
-            if previous_recipes:
-                for i, prev_recipe in enumerate(previous_recipes):
-                    if i not in used_previous_indices and len(current_meal_recipes) < needed_count:
-                        # Simple check if it fits meal type (optional: could use LLM to check)
-                        current_meal_recipes.append(prev_recipe)
-                        used_previous_indices.add(i)
+            # 2. For days without precise match, try to fill with available previous recipes of same meal_type
+            # This handles cases where days shifted or we just want to reuse "Lunch" recipes
+            remaining_days = []
+            for day in days_needing_recipe:
+                found = None
+                for r in available_previous:
+                    # Check if not used AND matches meal type
+                    # We use str(id) for comparison to be safe
+                    if str(r.get("id")) not in [str(uid) for uid in used_previous_ids] and r.get("meal_type") == meal_type:
+                        found = r
+                        break
+                
+                if found:
+                    current_meal_recipes_map[day] = found
+                    used_previous_ids.add(found.get("id"))
+                else:
+                    remaining_days.append(day)
             
-            # If we still need more recipes, fetch from RAG
-            remaining_count = needed_count - len(current_meal_recipes)
-            if remaining_count > 0:
-                new_recipes = await rag_service.get_recipe_recommendations(
+            # 3. Fetch new recipes for remaining slots
+            if remaining_days:
+                query = f"{meal_type} recipes"
+                if dietary:
+                    query += f" {' '.join(dietary)}"
+                if other_prefs:
+                    query += f" {other_prefs}"
+                
+                new_recipes_result = await _get_recipe_recommendations(
                     user_query=query,
                     db=db,
                     dietary_restrictions=dietary if dietary else None,
                     max_calories=max_calories,
-                    n_results=remaining_count,
+                    n_results=len(remaining_days),
                     metadata_filter=metadata_filter if metadata_filter else None
                 )
-                current_meal_recipes.extend(new_recipes.get('recipes', []))
+                new_recipes = new_recipes_result.get('recipes', [])
+                
+                for i, day in enumerate(remaining_days):
+                    if i < len(new_recipes):
+                        current_meal_recipes_map[day] = new_recipes[i]
             
-            # Assign to days
-            for idx, day in enumerate(day_names):
-                if idx < len(current_meal_recipes):
-                    recipe = current_meal_recipes[idx].copy()
+            # Assign to final list
+            for day in day_names:
+                if day in current_meal_recipes_map:
+                    recipe = current_meal_recipes_map[day].copy()
                     recipe["day_name"] = day
                     recipe["meal_type"] = meal_type
                     suggested_recipes.append(recipe)
@@ -394,11 +716,10 @@ async def handle_weekly_menu_mode(
         # Build response message
         dietary_text = f" {', '.join(dietary)}" if dietary else ""
         day_desc = f"{len(day_names)} days" if len(day_names) != 7 else "the week"
-        time_text = f" (under {max_time} min)" if max_time else ""
         cal_text = f" (max {max_calories} cal)" if max_calories else ""
         
         return {
-            "reply": f"Here's your{dietary_text} menu plan for **{day_desc}**{time_text}{cal_text} with **{len(suggested_recipes)} recipes**!",
+            "reply": f"Here's your{dietary_text} menu plan for **{day_desc}**{cal_text} with **{len(suggested_recipes)} recipes**!",
             "suggested_recipes": suggested_recipes,
             "weekly_menu": None
         }
@@ -411,39 +732,17 @@ async def handle_weekly_menu_mode(
 async def chat_agent_handler(
     db: Session,
     session_id: str,
-    message: str,
-    image_bytes: bytes = None
+    message: str
 ) -> Dict:
     """Main chat agent entry point with intent detection."""
-    memory = ConversationMemory(db, session_id)
+    memory = ConversationMemory(session_id)
     
     # Analyze context and detect intent
     context_analysis = await analyze_conversation_context(message, memory)
-    intent = await detect_user_intent_with_llm(message, memory, image_bytes is not None, context_analysis)
+    intent = await detect_user_intent_with_llm(message, memory, False, context_analysis)
     await memory.record_user_message(message, intent)
     
     logger.info(f"[Chat Agent] Intent: {intent} for message: '{message[:50]}...'")
-    
-    # Handle image analysis
-    if image_bytes:
-        from app.services.image_pipeline import analyze_image_pipeline
-        
-        try:
-            recipe, nutrition, tags, _ = await analyze_image_pipeline(db, image_bytes, title=message)
-            recipe_dict = format_recipe_dict(recipe, nutrition, tags)
-            recipe_dict["source_type"] = "image"
-            recipe_dict["show_nutrition_only"] = (intent == "nutrition")
-            
-            result = {
-                "reply": f"Identified: **{recipe.name}**!\n\nHere's the {'nutrition information' if intent == 'nutrition' else 'full recipe'}.",
-                "suggested_recipes": [recipe_dict],
-                "weekly_menu": None
-            }
-            await memory.record_assistant_response(result["reply"], [recipe.id], [recipe_dict])
-            return result
-        except Exception as e:
-            logger.error(f"Image analysis failed: {e}")
-            return create_error_response(f"Couldn't analyze the image: {str(e)}")
     
     # Dispatch to handler
     result = await dispatch_intent(intent, db, session_id, message, memory)

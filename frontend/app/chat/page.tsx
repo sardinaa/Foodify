@@ -1,7 +1,7 @@
 'use client';
 
 import { useState } from 'react';
-import { Send, Camera, Image as ImageIcon, Link as LinkIcon, Loader2, X } from 'lucide-react';
+import { Send, Loader2, X } from 'lucide-react';
 import { sendChatMessage, getRecipeById, Recipe } from '@/lib/apiClient';
 import type { RecipeSearchResult } from '@/lib/apiClient';
 import { formatTime } from '@/lib/utils';
@@ -22,7 +22,6 @@ type Message = {
   timestamp: Date;
   recipes?: ChatRecipe[];
   isWeeklyMenu?: boolean; // Flag for weekly menu display
-  imageUrl?: string; // For displaying uploaded images
 };
 
 export default function ChatPage() {
@@ -32,54 +31,35 @@ export default function ChatPage() {
   const [sessionId] = useState(() => `session-${Date.now()}`);
   const [selectedRecipe, setSelectedRecipe] = useState<any>(null);
   const [showRecipeModal, setShowRecipeModal] = useState(false);
-  const [selectedImage, setSelectedImage] = useState<File | null>(null);
-  const [imagePreview, setImagePreview] = useState<string | null>(null);
 
   const starterPrompts = [
     'Find recipes with ingredients I have in my fridge',
-    'Which is the nutritional values of this dish?',
-    'Import recipe from URL',
     'Generate my weekly menu',
     'Show me high-protein meals',
     'Quick dinner ideas under 30 mins',
   ];
 
-  const handleImageSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (file) {
-      setSelectedImage(file);
-      setImagePreview(URL.createObjectURL(file));
-    }
-  };
-
   const handleSend = async () => {
-    if (!input.trim() && !selectedImage) return;
-
-    // Store image preview URL before clearing
-    const savedImagePreview = imagePreview;
+    if (!input.trim()) return;
 
     const userMessage: Message = {
       id: Date.now().toString(),
       role: 'user',
-      content: input || (selectedImage ? 'What can I make with this?' : ''),
+      content: input,
       timestamp: new Date(),
-      imageUrl: savedImagePreview || undefined,
     };
 
     setMessages((prev) => [...prev, userMessage]);
-    const userInput = input || (selectedImage ? 'Analyze this food image' : '');
-    const imageToSend = selectedImage;
+    const userInput = input;
     setInput('');
-    setSelectedImage(null);
-    setImagePreview(null);
     setIsLoading(true);
 
     try {
-      // Call backend chat API with optional image
-      const response = await sendChatMessage(sessionId, userInput, imageToSend);
+      // Call backend chat API
+      const response = await sendChatMessage(sessionId, userInput);
       
       // Convert Recipe objects to ChatRecipe format
-      // For dataset recipes, we need to fetch nutrition data from /api/rag/search
+      // For dataset recipes, we need to fetch nutrition data from /api/recipes/search
       // For now, show what we have and fetch details on click
       const timestamp = Date.now();
       const recipeResults: ChatRecipe[] = await Promise.all(
@@ -120,13 +100,11 @@ export default function ChatPage() {
           return {
             id: uniqueId,
             name: recipe.name,
-            category: recipe.tags?.[0] || 'Other',
             source: (recipe.source_type as 'dataset' | 'mine') || 'dataset',
             calories: nutritionData.calories,
             protein: nutritionData.protein,
             carbs: nutritionData.carbs,
             fat: nutritionData.fat,
-            time: recipe.total_time_minutes,
             servings: recipe.servings,
             keywords: recipe.tags || [],
             fullRecipe: recipe, // Store the complete recipe data (though ingredients/steps will be empty)
@@ -173,10 +151,8 @@ export default function ChatPage() {
         const modalRecipe = {
           id: recipe.id,
           name: recipe.fullRecipe.name || recipe.name,
-          category: recipe.category,
           source: recipe.source,
           servings: recipe.fullRecipe.servings || 4,
-          totalTime: recipe.fullRecipe.total_time_minutes || recipe.time || 0,
           keywords: recipe.keywords || recipe.fullRecipe.tags || [],
           calories: recipe.calories || 0,
           protein: recipe.protein || 0,
@@ -218,10 +194,8 @@ export default function ChatPage() {
         const modalRecipe = {
           id: recipe.id,
           name: recipe.fullRecipe.name || recipe.name,
-          category: recipe.category,
           source: recipe.source,
           servings: recipe.fullRecipe.servings || 4,
-          totalTime: recipe.fullRecipe.total_time_minutes || recipe.time || 0,
           ingredients: Array.isArray(recipe.fullRecipe.ingredients) 
             ? recipe.fullRecipe.ingredients.map((ing: any) => ({
                 name: ing.name || '',
@@ -308,15 +282,6 @@ export default function ChatPage() {
                   >
                     {message.role === 'user' ? (
                       <>
-                        {message.imageUrl && (
-                          <div className="mb-2">
-                            <img 
-                              src={message.imageUrl} 
-                              alt="Uploaded food" 
-                              className="rounded-lg max-w-xs max-h-60 object-cover"
-                            />
-                          </div>
-                        )}
                         <p className="whitespace-pre-wrap">{message.content}</p>
                       </>
                     ) : (
@@ -488,39 +453,8 @@ export default function ChatPage() {
       {/* Input Area */}
       <div className="bg-white border-t border-gray-200 px-4 py-4">
         <div className="max-w-4xl mx-auto">
-          {/* Image Preview */}
-          {imagePreview && (
-            <div className="mb-3 relative inline-block">
-              <img src={imagePreview} alt="Preview" className="max-h-32 rounded-lg border-2 border-emerald-500" />
-              <button
-                onClick={() => {
-                  setSelectedImage(null);
-                  setImagePreview(null);
-                }}
-                className="absolute -top-2 -right-2 bg-red-500 text-white rounded-full p-1 hover:bg-red-600"
-              >
-                <X size={16} />
-              </button>
-            </div>
-          )}
           
           <div className="flex gap-2 items-center">
-            <div className="flex gap-2">
-              <input
-                type="file"
-                accept="image/*"
-                onChange={handleImageSelect}
-                className="hidden"
-                id="image-upload"
-              />
-              <label
-                htmlFor="image-upload"
-                className="p-3 text-gray-600 hover:text-emerald-600 hover:bg-emerald-50 rounded-lg transition-colors cursor-pointer flex items-center justify-center"
-                title="Upload image"
-              >
-                <ImageIcon size={20} />
-              </label>
-            </div>
 
             <div className="flex-1 relative">
               <textarea
@@ -532,7 +466,7 @@ export default function ChatPage() {
                     handleSend();
                   }
                 }}
-                placeholder="Type a message, paste a URL, or upload an image..."
+                placeholder="Type a message..."
                 rows={1}
                 className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:border-transparent resize-none text-gray-900"
                 style={{ minHeight: '44px', maxHeight: '120px' }}
@@ -541,7 +475,7 @@ export default function ChatPage() {
 
             <button
               onClick={handleSend}
-              disabled={(!input.trim() && !selectedImage) || isLoading}
+              disabled={!input.trim() || isLoading}
               className="p-3 bg-emerald-600 text-white rounded-lg hover:bg-emerald-700 disabled:bg-gray-300 disabled:cursor-not-allowed transition-colors flex items-center justify-center"
             >
               {isLoading ? <Loader2 size={20} className="animate-spin" /> : <Send size={20} />}

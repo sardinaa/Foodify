@@ -6,35 +6,19 @@ from typing import List, Optional
 import logging
 from sqlalchemy.orm import Session
 
-from app.services.recipe_rag import RecipeRAGService
+from app.services.recipe_vectorstore import get_vector_store
+from app.core.config import get_settings
 from app.db.session import get_db
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/recipes", tags=["Recipe Search"])
 
-# Initialize RAG service
-rag_service = RecipeRAGService()
-
-
-@router.get("/categories")
-async def get_categories():
-    """
-    Get all unique recipe categories from the database.
-    
-    Returns a list of all recipe categories available in the dataset
-    (e.g., Dessert, Chicken, Breakfast, Asian, etc.)
-    """
-    try:
-        categories = rag_service.vector_store.get_unique_categories()
-        
-        return {
-            "categories": categories,
-            "total_count": len(categories)
-        }
-        
-    except Exception as e:
-        logger.error(f"Error getting categories: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+# Initialize vector store
+settings = get_settings()
+vector_store = get_vector_store(
+    persist_directory=settings.vector_store_path,
+    embedding_model=settings.embedding_model
+)
 
 
 @router.get("/keywords")
@@ -50,7 +34,7 @@ async def get_keywords():
     - cuisine: Asian, Indian, Mexican, etc.
     """
     try:
-        keywords = rag_service.vector_store.get_unique_keywords()
+        keywords = vector_store.get_unique_keywords()
         
         return {
             "keywords": keywords,
@@ -66,8 +50,7 @@ async def get_keywords():
 async def search_recipes(
     search: Optional[str] = Query(None, description="Search query"),
     source_type: Optional[str] = Query(None, description="Filter by source type (dataset, image, url, chat)"),
-    categories: Optional[List[str]] = Query(None, description="Filter by categories"),
-    keywords: Optional[List[str]] = Query(None, description="Filter by keywords"),
+    keywords: Optional[List[str]] = Query(None, description="Filter by keywords/tags (dish type, cuisine, diet labels, etc.)"),
     max_calories: Optional[float] = Query(None, description="Maximum calories"),
     min_protein: Optional[float] = Query(None, description="Minimum protein"),
     max_carbs: Optional[float] = Query(None, description="Maximum carbs"),
@@ -75,7 +58,7 @@ async def search_recipes(
     servings: Optional[int] = Query(None, description="Number of servings"),
     sort: Optional[str] = Query("relevance", description="Sort by (relevance, calories, protein, recent, alphabetical)"),
     page: int = Query(1, ge=1, description="Page number"),
-    limit: int = Query(20, ge=1, le=100, description="Results per page")
+    limit: int = Query(20, ge=1, le=1000, description="Results per page")
 ):
     """
     Search recipes with advanced filtering.
@@ -83,8 +66,7 @@ async def search_recipes(
     Supports filtering by:
     - Text search query (semantic search across recipe names and descriptions)
     - Source type (dataset recipes vs user-added recipes)
-    - Categories (e.g., Dessert, Chicken, Breakfast)
-    - Keywords (e.g., Vegetarian, Low-Calorie, Quick)
+    - Keywords/tags (e.g., Vegetarian, Low-Calorie, Quick, salad, american, lunch/dinner)
     - Nutritional constraints (max calories, min protein, etc.)
     - Servings
     
@@ -95,20 +77,20 @@ async def search_recipes(
         metadata_filters = {}
         if source_type:
             metadata_filters["source_type"] = source_type
-        if categories:
-            metadata_filters["category"] = {"$in": categories}
         
         # Fetch recipes from vector store with generous limit for filtering
-        fetch_limit = min(limit * 3, 500)
+        # Note: vector_store methods already parse JSON fields and populate keywords
+        # Increased limit to allow for more extensive filtering and pagination
+        fetch_limit = 2000
         
         if search:
-            results = rag_service.vector_store.search_recipes(
+            results = vector_store.search_recipes(
                 query=search,
                 filter_dict=metadata_filters if metadata_filters else None,
                 n_results=fetch_limit
             )
         else:
-            results = rag_service.vector_store.get_recipes_by_filter(
+            results = vector_store.get_recipes_by_filter(
                 filter_dict=metadata_filters if metadata_filters else None,
                 n_results=fetch_limit
             )
@@ -116,15 +98,9 @@ async def search_recipes(
         # Apply filters and collect matching recipes
         filtered_recipes = []
         for recipe in results:
-            # Keyword filter
+            # Keyword filter (keywords are already parsed by vector_store)
             if keywords:
                 recipe_keywords = recipe.get("keywords", [])
-                if isinstance(recipe_keywords, str):
-                    import json
-                    try:
-                        recipe_keywords = json.loads(recipe_keywords)
-                    except:
-                        recipe_keywords = []
                 if not any(kw in recipe_keywords for kw in keywords):
                     continue
             
@@ -233,8 +209,8 @@ async def get_recipe_details(recipe_id: str, session_id: str = None, db: Session
             # Not a numeric ID, continue to ChromaDB lookup
             pass
         
-        # Fall back to full RAG lookup (for dataset recipes)
-        recipe = rag_service.get_recipe_by_id(recipe_id, db)
+        # Fall back to vector store lookup (for dataset recipes)
+        recipe = vector_store.get_recipe_by_id(recipe_id)
         
         if not recipe:
             raise HTTPException(status_code=404, detail="Recipe not found")

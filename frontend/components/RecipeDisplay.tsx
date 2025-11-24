@@ -18,7 +18,6 @@ export default function RecipeDisplay({ recipe, nutrition, tags }: RecipeDisplay
           <p className="text-gray-600">{recipe.description}</p>
         )}
         <div className="flex gap-4 mt-3 text-sm text-gray-600">
-          <span>⏱️ {recipe.total_time_minutes} minutes</span>
           <span>🍽️ {recipe.servings} servings</span>
         </div>
       </div>

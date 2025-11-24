@@ -196,12 +196,16 @@ async def detect_user_intent_with_llm(
         user_message=message,
     )
 
+    logger.debug(f"[Intent Detection] Prompt:\n{user_prompt}")
+
     llm = get_llm_client()
     response = await llm.chat(
         messages=[{"role": "user", "content": user_prompt}],
         temperature=0.1,
         system=system_prompt,
     )
+
+    logger.debug(f"[Intent Detection] Raw LLM Response:\n{response}")
 
     try:
         # Parse JSON response

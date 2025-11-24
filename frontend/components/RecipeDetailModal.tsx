@@ -367,7 +367,7 @@ export default function RecipeDetailModal({
                 className={`flex items-center gap-2 px-4 py-2 rounded-lg transition-colors ${
                   isFavorited
                     ? 'bg-red-50 text-red-600 hover:bg-red-100'
-                    : 'border border-gray-300 hover:bg-gray-50'
+                    : 'border border-gray-300 hover:bg-gray-50 text-gray-800'
                 }`}
               >
                 <Heart size={18} fill={isFavorited ? 'currentColor' : 'none'} />
@@ -377,7 +377,7 @@ export default function RecipeDetailModal({
             {onShare && (
               <button
                 onClick={onShare}
-                className="flex items-center gap-2 px-4 py-2 border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors"
+                className="flex items-center gap-2 px-4 py-2 border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors text-gray-800"
               >
                 <Share2 size={18} />
                 <span className="hidden sm:inline">Share</span>
@@ -385,7 +385,7 @@ export default function RecipeDetailModal({
             )}
             <button
               onClick={() => window.print()}
-              className="flex items-center gap-2 px-4 py-2 border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors"
+              className="flex items-center gap-2 px-4 py-2 border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors text-gray-800"
             >
               <Printer size={18} />
               <span className="hidden sm:inline">Print</span>

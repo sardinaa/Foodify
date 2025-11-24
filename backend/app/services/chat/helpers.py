@@ -1,20 +1,8 @@
 """
 Helper functions for chat agent to reduce code duplication.
 """
-import re
-from typing import Dict, List, Optional
-from datetime import datetime
-from app.db.serializers import RecipeSerializer
-from app.core.constants import LimitsConstants
-
-
-def extract_urls(message: str) -> List[str]:
-    """Extract URLs from message text."""
-    urls = re.findall(r'https?://[^\s]+', message)
-    if not urls:
-        www_urls = re.findall(r'www\.[^\s]+', message)
-        urls = [f"https://{url}" for url in www_urls]
-    return urls
+from typing import Dict, List
+from app.db.schema import Recipe
 
 
 def format_recipe_dict(recipe_model, nutrition=None, tags=None) -> Dict:
@@ -26,13 +14,13 @@ def format_recipe_dict(recipe_model, nutrition=None, tags=None) -> Dict:
     if hasattr(recipe_model, 'model_dump'):
         # Pydantic schema - convert to dict directly
         recipe_dict = recipe_model.model_dump(mode="json")
-        # Ensure consistent format
-        recipe_dict["recipe_id"] = str(recipe_dict.get("id", ""))
-        recipe_dict["time"] = recipe_dict.get("total_time_minutes")
-        recipe_dict["keywords"] = recipe_dict.get("tags", [])
     else:
-        # Database model - use the unified serializer
-        recipe_dict = RecipeSerializer.model_to_dict(recipe_model)
+        # Database model - convert using Pydantic schema
+        recipe_dict = Recipe.model_validate(recipe_model).model_dump(mode="json")
+    
+    # Ensure consistent format
+    recipe_dict["recipe_id"] = str(recipe_dict.get("id", ""))
+    recipe_dict["keywords"] = recipe_dict.get("tags", [])
     
     # Override with custom nutrition if provided
     if nutrition:

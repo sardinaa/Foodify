@@ -11,7 +11,7 @@ from datetime import datetime
 
 from app.core.config import get_settings
 from app.db.session import init_db
-from app.api import routes_image, routes_url, routes_chat, routes_rag
+from app.api import routes_chat, routes_recipes
 from app.core.logging import setup_logging
 
 logger = setup_logging()
@@ -53,10 +53,8 @@ app.add_middleware(
 )
 
 # Include routers
-app.include_router(routes_image.router, prefix="/api", tags=["image"])
-app.include_router(routes_url.router, prefix="/api", tags=["url"])
 app.include_router(routes_chat.router, prefix="/api", tags=["chat"])
-app.include_router(routes_rag.router, tags=["rag"])
+app.include_router(routes_recipes.router, tags=["recipes"])
 
 
 @app.get("/")
@@ -76,8 +74,7 @@ async def health_check():
     return {
         "status": "healthy",
         "database": settings.database_url,
-        "llm_provider": settings.llm_provider,
-        "vlm_provider": settings.vlm_provider
+        "llm_provider": settings.llm_provider
     }
 
 

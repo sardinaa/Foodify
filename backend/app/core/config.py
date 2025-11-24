@@ -27,16 +27,7 @@ class Settings(BaseSettings):
     # LLM Configuration
     llm_provider: str = "ollama"
     llm_base_url: str = "http://localhost:11434"
-    llm_model: str = "llama3:latest"
-    
-    # VLM Configuration
-    vlm_provider: str = "ollama"
-    vlm_base_url: str = "http://localhost:11434"
-    vlm_model: str = "qwen3-vl:latest"
-    
-    # Web Scraping
-    # For blogs: Uses httpx + BeautifulSoup (fast, simple)
-    # For social media: Uses oEmbed APIs, Open Graph metadata, and platform-specific extraction
+    llm_model: str = "gpt-oss:latest"
     
     # Logging
     log_level: str = "INFO"

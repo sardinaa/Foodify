@@ -11,7 +11,7 @@ from app.core.config import get_settings
 from app.core.constants import LimitsConstants
 from app.utils.prompt_loader import get_prompt_loader
 from app.db.crud_recipes import get_recipe
-from app.db.serializers import RecipeSerializer
+from app.db.schema import Recipe
 from app.utils.json_parser import parse_llm_json
 import json
 import random
@@ -41,12 +41,55 @@ class RecipeRAGService:
         logger.info(f"RAG service initialized with {self.vector_store.count()} recipes")
     
     def _model_to_dict(self, recipe_model) -> Dict[str, Any]:
-        """Convert recipe model from the SQL database to dictionary using unified serializer."""
-        return RecipeSerializer.model_to_dict(recipe_model)
+        """Convert recipe model from SQL database to dictionary."""
+        return Recipe.model_validate(recipe_model).model_dump(mode="json")
     
     def _metadata_to_dict(self, metadata: Dict[str, Any]) -> Dict[str, Any]:
-        """Convert ChromaDB metadata to dictionary using unified serializer."""
-        return RecipeSerializer.metadata_to_dict(metadata)
+        """Convert ChromaDB metadata to dictionary with full nutrition and tags."""
+        import json
+        # Parse JSON fields from ChromaDB metadata
+        ingredients = json.loads(metadata.get('ingredients', '[]')) if isinstance(metadata.get('ingredients'), str) else metadata.get('ingredients', [])
+        instructions = json.loads(metadata.get('instructions', '[]')) if isinstance(metadata.get('instructions'), str) else metadata.get('instructions', [])
+        keywords = json.loads(metadata.get('keywords', '[]')) if isinstance(metadata.get('keywords'), str) else metadata.get('keywords', [])
+        
+        # Parse other label fields
+        diet_labels = json.loads(metadata.get('diet_labels', '[]')) if isinstance(metadata.get('diet_labels'), str) else metadata.get('diet_labels', [])
+        health_labels = json.loads(metadata.get('health_labels', '[]')) if isinstance(metadata.get('health_labels'), str) else metadata.get('health_labels', [])
+        dish_type = json.loads(metadata.get('dish_type', '[]')) if isinstance(metadata.get('dish_type'), str) else metadata.get('dish_type', [])
+        cuisine_type = json.loads(metadata.get('cuisine_type', '[]')) if isinstance(metadata.get('cuisine_type'), str) else metadata.get('cuisine_type', [])
+        meal_type = json.loads(metadata.get('meal_type', '[]')) if isinstance(metadata.get('meal_type'), str) else metadata.get('meal_type', [])
+        
+        # Combine all tags if keywords is empty
+        if not keywords:
+            keywords = []
+            keywords.extend(diet_labels)
+            keywords.extend(health_labels)
+            keywords.extend(dish_type)
+            keywords.extend(cuisine_type)
+            keywords.extend(meal_type)
+        
+        return {
+            "id": metadata.get('recipe_id', 0),
+            "name": metadata.get('name', 'Unknown'),
+            "description": metadata.get('description', ''),
+            "category": metadata.get('category', '') or (dish_type[0] if dish_type else ''),
+            "servings": int(metadata.get('servings', 4)),
+            "ingredients": [{"name": i, "quantity": None, "unit": None} if isinstance(i, str) else i for i in ingredients],
+            "steps": [{"step_number": idx+1, "instruction": s} if isinstance(s, str) else s for idx, s in enumerate(instructions)],
+            "tags": keywords,
+            "keywords": keywords,
+            "calories": float(metadata.get('calories', 0)),
+            "protein": float(metadata.get('protein', 0)),
+            "carbs": float(metadata.get('carbs', 0)),
+            "fat": float(metadata.get('fat', 0)),
+            "fiber": float(metadata.get('fiber', 0)),
+            "sugar": float(metadata.get('sugar', 0)),
+            "saturated_fat": float(metadata.get('saturated_fat', 0)),
+            "cholesterol": float(metadata.get('cholesterol', 0)),
+            "sodium": float(metadata.get('sodium', 0)),
+            "source_type": metadata.get('source_type', 'dataset'),
+            "created_at": None
+        }
     
     async def transform_query(self, user_query: str) -> str:
         """
@@ -96,7 +139,6 @@ class RecipeRAGService:
             
             return parse_llm_json(response, fallback={
                 "dietary": [],
-                "max_time_minutes": None,
                 "max_calories": None,
                 "quantity": None,
                 "min_protein": None,
@@ -423,7 +465,7 @@ class RecipeRAGService:
             
             recipe_info = f"""Recipe {i}: {recipe['name']}
   Category: {recipe.get('category', 'Unknown')}
-  Servings: {recipe.get('servings', 'N/A')} | Time: {recipe.get('total_time_minutes', 'N/A')} min
+  Servings: {recipe.get('servings', 'N/A')}
   Nutrition (per serving): {recipe.get('calories', 0):.0f} kcal, Protein: {recipe.get('protein', 0):.1f}g, Carbs: {recipe.get('carbs', 0):.1f}g, Fat: {recipe.get('fat', 0):.1f}g
   Tags: {', '.join(keywords[:5]) if keywords else 'None'}
   
