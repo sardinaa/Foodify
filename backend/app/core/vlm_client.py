@@ -4,18 +4,15 @@ Model-agnostic interface for analyzing food images.
 """
 import base64
 from typing import Dict, Optional
-import httpx
 
-from app.core.config import get_settings
-from app.utils.prompt_loader import get_prompt_loader
+from app.core.logging import get_logger
+from app.core.base_client import BaseAIClient
+
+logger = get_logger("core.vlm_client")
 
 
-class VLMClient:
+class VLMClient(BaseAIClient):
     """Client for interacting with Vision-Language Models."""
-    
-    def __init__(self):
-        self.settings = get_settings()
-        self.prompt_loader = get_prompt_loader()
     
     async def _call_ollama_vision(self, image_bytes: bytes, prompt: str) -> str:
         """Call Ollama vision API using chat endpoint."""
@@ -23,26 +20,21 @@ class VLMClient:
         image_b64 = base64.b64encode(image_bytes).decode('utf-8')
         
         url = f"{self.settings.vlm_base_url}/api/chat"
-        print(f"[VLM Client] Calling {url} with model {self.settings.vlm_model}")
         
-        async with httpx.AsyncClient(timeout=120.0) as client:
-            payload = {
-                "model": self.settings.vlm_model,
-                "messages": [
-                    {
-                        "role": "user",
-                        "content": prompt,
-                        "images": [image_b64]
-                    }
-                ],
-                "stream": False
-            }
-            
-            response = await client.post(url, json=payload)
-            print(f"[VLM Client] Response status: {response.status_code}")
-            response.raise_for_status()
-            result = response.json()
-            return result["message"]["content"]
+        payload = {
+            "model": self.settings.vlm_model,
+            "messages": [
+                {
+                    "role": "user",
+                    "content": prompt,
+                    "images": [image_b64]
+                }
+            ],
+            "stream": False
+        }
+        
+        response_json = await self._make_request(url, payload, log_prefix="VLM Client")
+        return response_json["message"]["content"]
     
     async def describe_dish_from_image(
         self,

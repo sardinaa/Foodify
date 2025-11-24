@@ -11,82 +11,73 @@ from app.db.models import (
     ChatMessageModel,
     UserRequirementModel
 )
+from app.db.base_crud import CRUDBase
+from pydantic import BaseModel
 
 
-def get_or_create_session(db: Session, session_id: str) -> ChatSessionModel:
-    """
-    Get existing chat session or create a new one.
-    
-    Args:
-        db: Database session
-        session_id: Unique session identifier
-    
-    Returns:
-        ChatSessionModel instance
-    """
-    session = db.query(ChatSessionModel).filter(
-        ChatSessionModel.session_id == session_id
-    ).first()
-    
-    if not session:
-        session = ChatSessionModel(
-            session_id=session_id,
-            created_at=datetime.utcnow(),
-            updated_at=datetime.utcnow()
-        )
-        db.add(session)
+class ChatSessionCreate(BaseModel):
+    session_id: str
+
+
+class CRUDChatSession(CRUDBase[ChatSessionModel, ChatSessionCreate, ChatSessionCreate]):
+    def get_or_create(self, db: Session, session_id: str) -> ChatSessionModel:
+        """
+        Get existing chat session or create a new one.
+        """
+        session = db.query(ChatSessionModel).filter(
+            ChatSessionModel.session_id == session_id
+        ).first()
+        
+        if not session:
+            session = ChatSessionModel(
+                session_id=session_id,
+                created_at=datetime.utcnow(),
+                updated_at=datetime.utcnow()
+            )
+            db.add(session)
+            db.commit()
+            db.refresh(session)
+        
+        return session
+
+    def update_preferences(
+        self,
+        db: Session,
+        session_id: str,
+        dietary_restrictions: Optional[List[str]] = None,
+        favorite_cuisines: Optional[List[str]] = None,
+        disliked_ingredients: Optional[List[str]] = None,
+        preferred_meal_types: Optional[List[str]] = None,
+        cooking_skill_level: Optional[str] = None,
+        time_constraints: Optional[int] = None
+    ) -> ChatSessionModel:
+        """
+        Update session preferences and context.
+        """
+        session = self.get_or_create(db, session_id)
+        
+        if dietary_restrictions is not None:
+            session.dietary_restrictions = json.dumps(dietary_restrictions)
+        if favorite_cuisines is not None:
+            session.favorite_cuisines = json.dumps(favorite_cuisines)
+        if disliked_ingredients is not None:
+            session.disliked_ingredients = json.dumps(disliked_ingredients)
+        if preferred_meal_types is not None:
+            session.preferred_meal_types = json.dumps(preferred_meal_types)
+        if cooking_skill_level is not None:
+            session.cooking_skill_level = cooking_skill_level
+        if time_constraints is not None:
+            session.time_constraints = time_constraints
+        
+        session.updated_at = datetime.utcnow()
         db.commit()
         db.refresh(session)
-    
-    return session
+        
+        return session
 
 
-def update_session_preferences(
-    db: Session,
-    session_id: str,
-    dietary_restrictions: Optional[List[str]] = None,
-    favorite_cuisines: Optional[List[str]] = None,
-    disliked_ingredients: Optional[List[str]] = None,
-    preferred_meal_types: Optional[List[str]] = None,
-    cooking_skill_level: Optional[str] = None,
-    time_constraints: Optional[int] = None
-) -> ChatSessionModel:
-    """
-    Update session preferences and context.
-    
-    Args:
-        db: Database session
-        session_id: Unique session identifier
-        dietary_restrictions: List of dietary restrictions
-        favorite_cuisines: List of favorite cuisines
-        disliked_ingredients: List of disliked ingredients
-        preferred_meal_types: List of preferred meal types
-        cooking_skill_level: Cooking skill level
-        time_constraints: Max cooking time in minutes
-    
-    Returns:
-        Updated ChatSessionModel instance
-    """
-    session = get_or_create_session(db, session_id)
-    
-    if dietary_restrictions is not None:
-        session.dietary_restrictions = json.dumps(dietary_restrictions)
-    if favorite_cuisines is not None:
-        session.favorite_cuisines = json.dumps(favorite_cuisines)
-    if disliked_ingredients is not None:
-        session.disliked_ingredients = json.dumps(disliked_ingredients)
-    if preferred_meal_types is not None:
-        session.preferred_meal_types = json.dumps(preferred_meal_types)
-    if cooking_skill_level is not None:
-        session.cooking_skill_level = cooking_skill_level
-    if time_constraints is not None:
-        session.time_constraints = time_constraints
-    
-    session.updated_at = datetime.utcnow()
-    db.commit()
-    db.refresh(session)
-    
-    return session
+chat_session = CRUDChatSession(ChatSessionModel)
+
 
 
 def get_session_preferences(db: Session, session_id: str) -> Dict:
@@ -100,7 +91,7 @@ def get_session_preferences(db: Session, session_id: str) -> Dict:
     Returns:
         Dictionary with preferences
     """
-    session = get_or_create_session(db, session_id)
+    session = chat_session.get_or_create(db, session_id)
     
     return {
         "dietary_restrictions": json.loads(session.dietary_restrictions) if session.dietary_restrictions else [],
@@ -110,6 +101,29 @@ def get_session_preferences(db: Session, session_id: str) -> Dict:
         "cooking_skill_level": session.cooking_skill_level,
         "time_constraints": session.time_constraints
     }
+
+
+def update_session_preferences(
+    db: Session,
+    session_id: str,
+    dietary_restrictions: Optional[List[str]] = None,
+    favorite_cuisines: Optional[List[str]] = None,
+    disliked_ingredients: Optional[List[str]] = None,
+    preferred_meal_types: Optional[List[str]] = None,
+    cooking_skill_level: Optional[str] = None,
+    time_constraints: Optional[int] = None
+) -> ChatSessionModel:
+    """Backward-compatible helper that updates chat session preferences."""
+    return chat_session.update_preferences(
+        db=db,
+        session_id=session_id,
+        dietary_restrictions=dietary_restrictions,
+        favorite_cuisines=favorite_cuisines,
+        disliked_ingredients=disliked_ingredients,
+        preferred_meal_types=preferred_meal_types,
+        cooking_skill_level=cooking_skill_level,
+        time_constraints=time_constraints
+    )
 
 
 def add_message(
@@ -135,7 +149,7 @@ def add_message(
         ChatMessageModel instance
     """
     # Ensure session exists
-    get_or_create_session(db, session_id)
+    chat_session.get_or_create(db, session_id)
     
     message = ChatMessageModel(
         session_id=session_id,
@@ -203,7 +217,7 @@ def add_user_requirement(
         UserRequirementModel instance
     """
     # Ensure session exists
-    get_or_create_session(db, session_id)
+    chat_session.get_or_create(db, session_id)
     
     requirement = UserRequirementModel(
         session_id=session_id,
@@ -312,7 +326,7 @@ def get_conversation_summary(db: Session, session_id: str) -> Dict:
     Returns:
         Dictionary with session summary including preferences, history, and requirements
     """
-    session = get_or_create_session(db, session_id)
+    session = chat_session.get_or_create(db, session_id)
     messages = get_conversation_history(db, session_id)
     requirements = get_active_requirements(db, session_id)
     preferences = get_session_preferences(db, session_id)

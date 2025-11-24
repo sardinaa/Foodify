@@ -2,10 +2,13 @@
 Text cleaning utilities for processing URLs and extracted content.
 """
 import re
-from bs4 import BeautifulSoup
-from typing import Optional, Dict
 import json
+from typing import Dict, List, Optional
 from urllib.parse import urlparse
+from bs4 import BeautifulSoup, Comment
+from app.core.logging import get_logger
+
+logger = get_logger("utils.text_cleaning")
 
 
 def clean_html(html_content: str) -> str:
@@ -189,7 +192,7 @@ def extract_url_content(url: str, html_content: str) -> dict:
         if last_period > 3000:
             cleaned_text = cleaned_text[:last_period + 1]
 
-    print(f"📝 Returning text type: length={len(cleaned_text)}, first 500 chars: {cleaned_text[:500]}")
+    logger.debug(f"Returning text type: length={len(cleaned_text)}, first 500 chars: {cleaned_text[:500]}")
     return {'type': 'text', 'content': cleaned_text}
 
 
@@ -230,7 +233,7 @@ def extract_social_media_content(url: str, html_content: str) -> Dict:
     soup = BeautifulSoup(html_content, 'lxml')
     platform = detect_social_platform(url)
     
-    print(f"🔍 Extracting content from {platform}...")
+    logger.info(f"Extracting content from {platform}...")
     
     text_parts = []
     
@@ -251,15 +254,15 @@ def extract_social_media_content(url: str, html_content: str) -> Dict:
         # Fallback: look for common social media patterns
         text_parts.extend(_extract_generic_social_content(soup))
     
-    print(f"📋 Extracted {len(text_parts)} content sections")
+    logger.debug(f"Extracted {len(text_parts)} content sections")
     for i, part in enumerate(text_parts[:3], 1):  # Show first 3 parts
-        print(f"   {i}. {part[:100]}...")
+        logger.debug(f"   {i}. {part[:100]}...")
     
     # Combine all extracted text
     if text_parts:
         text = '\n\n'.join(filter(None, text_parts))
     else:
-        print(f"⚠️  No specific content found, using fallback extraction...")
+        logger.warning(f"No specific content found, using fallback extraction...")
         # Ultimate fallback - extract all visible text but be smarter about it
         text = clean_html(html_content)
     
@@ -268,8 +271,8 @@ def extract_social_media_content(url: str, html_content: str) -> Dict:
     
     # If we got very little content, warn but still try
     if len(cleaned_text) < 50:
-        print(f"⚠️  Limited content extracted ({len(cleaned_text)} chars). Will try LLM anyway.")
-        print(f"💡 If extraction fails, try copying the text and using Chat instead.")
+        logger.warning(f"Limited content extracted ({len(cleaned_text)} chars). Will try LLM anyway.")
+        logger.info(f"If extraction fails, try copying the text and using Chat instead.")
     
     if len(cleaned_text) > 4000:
         cleaned_text = cleaned_text[:4000]
@@ -277,7 +280,7 @@ def extract_social_media_content(url: str, html_content: str) -> Dict:
         if last_period > 3000:
             cleaned_text = cleaned_text[:last_period + 1]
     
-    print(f"✅ Final extracted content: {len(cleaned_text)} chars")
+    logger.info(f"Final extracted content: {len(cleaned_text)} chars")
     return {'type': 'text', 'content': cleaned_text}
 
 

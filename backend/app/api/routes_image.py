@@ -8,6 +8,9 @@ from typing import Optional
 from app.db.session import get_db
 from app.db.schema import AnalyzeImageResponse
 from app.services.image_pipeline import analyze_image_pipeline
+from app.core.logging import get_logger
+
+logger = get_logger("api.image")
 
 router = APIRouter()
 
@@ -26,31 +29,21 @@ async def analyze_image(
     
     Returns structured recipe, nutrition data, and tags.
     """
-    try:
-        # Read image bytes
-        image_bytes = await image.read()
-        
-        # Run pipeline
-        recipe, nutrition, tags, debug = await analyze_image_pipeline(
-            db, image_bytes, title
-        )
-        
-        # Create response and serialize manually to handle datetime
-        print(f"[Image API] Creating response with recipe type: {type(recipe)}")
-        print(f"[Image API] Recipe created_at type: {type(recipe.created_at)}")
-        
-        response = AnalyzeImageResponse(
-            recipe=recipe,
-            nutrition=nutrition,
-            tags=tags,
-            debug=debug
-        )
-        
-        print(f"[Image API] Response created, dumping to JSON...")
-        # Use Pydantic's model_dump with mode='json' to properly serialize datetime
-        result = response.model_dump(mode='json')
-        print(f"[Image API] Successfully dumped to JSON, returning...")
-        return result
+    # Read image bytes
+    image_bytes = await image.read()
     
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Image analysis failed: {str(e)}")
+    # Run pipeline
+    recipe, nutrition, tags, debug = await analyze_image_pipeline(
+        db, image_bytes, title
+    )
+    
+    # Create response
+    response = AnalyzeImageResponse(
+        recipe=recipe,
+        nutrition=nutrition,
+        tags=tags,
+        debug=debug
+    )
+    
+    # Use Pydantic's model_dump with mode='json' to properly serialize datetime
+    return response.model_dump(mode='json')

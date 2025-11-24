@@ -182,6 +182,11 @@ export default function ChatPage() {
           protein: recipe.protein || 0,
           carbs: recipe.carbs || 0,
           fat: recipe.fat || 0,
+          fiber: recipe.fiber,
+          sugar: recipe.sugar,
+          saturated_fat: recipe.saturated_fat,
+          cholesterol: recipe.cholesterol,
+          sodium: recipe.sodium,
           ingredients: Array.isArray(recipe.fullRecipe.ingredients) 
             ? recipe.fullRecipe.ingredients.map((ing: any) => ({
                 name: ing.name || '',
@@ -234,6 +239,11 @@ export default function ChatPage() {
           protein: recipe.protein || 0,
           carbs: recipe.carbs || 0,
           fat: recipe.fat || 0,
+          fiber: recipe.fiber,
+          sugar: recipe.sugar,
+          saturated_fat: recipe.saturated_fat,
+          cholesterol: recipe.cholesterol,
+          sodium: recipe.sodium,
           keywords: recipe.keywords || [],
         };
         

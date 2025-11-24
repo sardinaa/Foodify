@@ -72,33 +72,59 @@ class RecipeVectorStore:
         text_parts = []
         
         # Recipe name and description
-        if recipe.get("Name"):
-            text_parts.append(f"Recipe: {recipe['Name']}")
+        if recipe.get("name"):
+            text_parts.append(f"Recipe: {recipe['name']}")
+        elif recipe.get("Name"):
+             text_parts.append(f"Recipe: {recipe['Name']}")
         
-        if recipe.get("Description"):
+        if recipe.get("description"):
+            text_parts.append(f"Description: {recipe['description']}")
+        elif recipe.get("Description"):
             text_parts.append(f"Description: {recipe['Description']}")
         
-        # Category
+        # Category / Dish Type
+        if recipe.get("dish_type"):
+             text_parts.append(f"Dish Type: {recipe['dish_type']}")
+        if recipe.get("cuisine_type"):
+             text_parts.append(f"Cuisine: {recipe['cuisine_type']}")
+        if recipe.get("meal_type"):
+             text_parts.append(f"Meal Type: {recipe['meal_type']}")
+        
         if recipe.get("RecipeCategory"):
             text_parts.append(f"Category: {recipe['RecipeCategory']}")
         
-        # Keywords
+        # Tags (Diet/Health labels or Keywords)
+        tags = []
+        if recipe.get("diet_labels"):
+            tags.extend(recipe["diet_labels"])
+        if recipe.get("health_labels"):
+            tags.extend(recipe["health_labels"])
+        
         keywords = self._parse_r_array(recipe.get("Keywords"))
         if keywords:
-            text_parts.append(f"Tags: {', '.join(keywords)}")
-        
+            tags.extend(keywords)
+            
+        if tags:
+            text_parts.append(f"Tags: {', '.join(tags)}")
+
         # Ingredients
-        ingredients = self._parse_r_array(recipe.get("RecipeIngredientParts"))
+        ingredients = recipe.get("ingredients", [])
+        if not ingredients:
+            ingredients = self._parse_r_array(recipe.get("RecipeIngredientParts"))
+            
         if ingredients:
             text_parts.append(f"Ingredients: {', '.join(ingredients)}")
         
         # Instructions
-        instructions = self._parse_r_array(recipe.get("RecipeInstructions"))
+        instructions = recipe.get("instructions", [])
+        if not instructions:
+            instructions = self._parse_r_array(recipe.get("RecipeInstructions"))
+            
         if instructions:
             # Join instructions with periods
             inst_text = ". ".join(instructions[:10])  # Limit to first 10 steps
             text_parts.append(f"Instructions: {inst_text}")
-        
+            
         return "\n".join(text_parts)
     
     def _create_recipe_metadata(self, recipe: Dict[str, Any]) -> Dict[str, Any]:
@@ -107,19 +133,22 @@ class RecipeVectorStore:
         keywords = self._parse_r_array(recipe.get("Keywords"))
         
         # Parse ingredients
-        ingredients = self._parse_r_array(recipe.get("RecipeIngredientParts"))
+        ingredients = recipe.get("ingredients", [])
+        if not ingredients:
+            ingredients = self._parse_r_array(recipe.get("RecipeIngredientParts"))
         
         # Parse instructions
-        instructions = self._parse_r_array(recipe.get("RecipeInstructions"))
+        instructions = recipe.get("instructions", [])
+        if not instructions:
+            instructions = self._parse_r_array(recipe.get("RecipeInstructions"))
         
         # Parse time values
         cook_time = recipe.get("CookTime", "")
-        prep_time = recipe.get("PrepTime", "")
         total_time = recipe.get("TotalTime", "")
         
         # Extract minutes from ISO 8601 duration format (e.g., "PT30M" -> 30, "PT2H20M" -> 140)
         time_minutes = 0
-        if total_time and "PT" in total_time:
+        if total_time and "PT" in str(total_time):
             import re
             # Extract hours and convert to minutes
             hours_match = re.search(r'(\d+)H', total_time)
@@ -129,24 +158,36 @@ class RecipeVectorStore:
             minutes_match = re.search(r'(\d+)M', total_time)
             if minutes_match:
                 time_minutes += int(minutes_match.group(1))
+        elif recipe.get("total_time_minutes"):
+            time_minutes = float(recipe.get("total_time_minutes"))
         
         return {
-            "recipe_id": str(recipe.get("RecipeId", "")),
-            "name": recipe.get("Name", ""),
-            "category": recipe.get("RecipeCategory", ""),
+            "recipe_id": str(recipe.get("id", "") or recipe.get("RecipeId", "")),
+            "name": recipe.get("name", "") or recipe.get("Name", ""),
+            "category": recipe.get("category", "") or recipe.get("RecipeCategory", ""),
+            "cuisine_type": recipe.get("cuisine_type", ""),
+            "meal_type": recipe.get("meal_type", ""),
+            "dish_type": recipe.get("dish_type", ""),
+            "diet_labels": json.dumps(recipe.get("diet_labels", [])),
+            "health_labels": json.dumps(recipe.get("health_labels", [])),
             "keywords": json.dumps(keywords),  # Store as JSON string
             "ingredients": json.dumps(ingredients),  # Store as JSON string
             "instructions": json.dumps(instructions),  # Store as JSON string
-            "servings": float(recipe.get("RecipeServings", 0)) if recipe.get("RecipeServings") else 0.0,
-            "calories": float(recipe.get("Calories", 0)) if recipe.get("Calories") else 0.0,
-            "protein": float(recipe.get("ProteinContent", 0)) if recipe.get("ProteinContent") else 0.0,
-            "carbs": float(recipe.get("CarbohydrateContent", 0)) if recipe.get("CarbohydrateContent") else 0.0,
-            "fat": float(recipe.get("FatContent", 0)) if recipe.get("FatContent") else 0.0,
-            "time": float(time_minutes) if time_minutes else 0.0,
+            "servings": float(recipe.get("servings", 0) or recipe.get("RecipeServings", 0)),
+            "calories": float(recipe.get("calories", 0) or recipe.get("Calories", 0)),
+            "protein": float(recipe.get("protein", 0) or recipe.get("ProteinContent", 0)),
+            "carbs": float(recipe.get("carbs", 0) or recipe.get("CarbohydrateContent", 0)),
+            "fat": float(recipe.get("fat", 0) or recipe.get("FatContent", 0)),
+            "fiber": float(recipe.get("fiber", 0)),
+            "sugar": float(recipe.get("sugar", 0)),
+            "saturated_fat": float(recipe.get("saturated_fat", 0)),
+            "cholesterol": float(recipe.get("cholesterol", 0)),
+            "sodium": float(recipe.get("sodium", 0)),
+            "time": float(time_minutes),
             "source": "dataset",  # Default source for dataset recipes
             "source_type": "dataset",  # For filtering
         }
-    
+
     def add_recipes(self, recipes: List[Dict[str, Any]], batch_size: int = 100) -> int:
         """
         Add recipes to the vector store.
@@ -171,8 +212,8 @@ class RecipeVectorStore:
             for idx, recipe in enumerate(batch):
                 try:
                     # Use RecipeId if available, otherwise create unique ID from batch position
-                    recipe_id_raw = recipe.get("RecipeId")
-                    if recipe_id_raw is not None and recipe_id_raw != "":
+                    recipe_id_raw = recipe.get("id") or recipe.get("RecipeId")
+                    if recipe_id_raw is not None and str(recipe_id_raw) != "":
                         recipe_id = str(recipe_id_raw)
                     else:
                         # Generate unique ID based on global position
@@ -212,7 +253,9 @@ class RecipeVectorStore:
                     )
                     
                     added += len(documents)
-                    logger.info(f"Added batch {i//batch_size + 1}, total: {added} recipes")
+                    # Calculate current batch number correctly based on total processed so far
+                    current_batch_num = (i // batch_size) + 1
+                    logger.info(f"Added batch {current_batch_num}, total: {added} recipes")
                     
                 except Exception as e:
                     logger.error(f"Failed to add batch: {e}")

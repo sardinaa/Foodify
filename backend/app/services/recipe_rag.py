@@ -1,6 +1,6 @@
 """
 RAG service for recipe recommendations.
-Full RAG implementation: ChromaDB for semantic search + PostgreSQL for complete recipe context.
+Full RAG pipeline: ChromaDB for semantic search + SQLite (via SQLAlchemy) for complete recipe context.
 """
 from typing import List, Dict, Any, Optional
 import logging
@@ -12,7 +12,9 @@ from app.core.constants import LimitsConstants
 from app.utils.prompt_loader import get_prompt_loader
 from app.db.crud_recipes import get_recipe
 from app.db.serializers import RecipeSerializer
+from app.utils.json_parser import parse_llm_json
 import json
+import random
 
 logger = logging.getLogger(__name__)
 
@@ -39,13 +41,125 @@ class RecipeRAGService:
         logger.info(f"RAG service initialized with {self.vector_store.count()} recipes")
     
     def _model_to_dict(self, recipe_model) -> Dict[str, Any]:
-        """Convert recipe model from PostgreSQL to dictionary using unified serializer."""
+        """Convert recipe model from the SQL database to dictionary using unified serializer."""
         return RecipeSerializer.model_to_dict(recipe_model)
     
     def _metadata_to_dict(self, metadata: Dict[str, Any]) -> Dict[str, Any]:
         """Convert ChromaDB metadata to dictionary using unified serializer."""
         return RecipeSerializer.metadata_to_dict(metadata)
     
+    async def transform_query(self, user_query: str) -> str:
+        """
+        Transform conversational query into optimized search keywords.
+        """
+        try:
+            config = self.prompt_loader.get_llm_prompt("query_transformation")
+            system_prompt = "\n".join(config.get("system", []))
+            user_template = "\n".join(config.get("user_template", []))
+            
+            prompt = self.prompt_loader.format_prompt(
+                user_template,
+                user_query=user_query
+            )
+            
+            optimized_query = await self.llm_client.chat(
+                messages=[{"role": "user", "content": prompt}],
+                temperature=0.1,
+                system=system_prompt
+            )
+            
+            logger.info(f"Query transformation: '{user_query}' -> '{optimized_query}'")
+            return optimized_query.strip()
+        except Exception as e:
+            logger.error(f"Query transformation failed: {e}")
+            return user_query
+
+    async def extract_constraints(self, user_query: str) -> Dict[str, Any]:
+        """
+        Extract constraints from user query using LLM.
+        """
+        try:
+            config = self.prompt_loader.get_llm_prompt("recipe_constraint_parser")
+            system_prompt = "\n".join(config.get("system", []))
+            user_template = "\n".join(config.get("user_template", []))
+            
+            prompt = self.prompt_loader.format_prompt(
+                user_template,
+                user_query=user_query
+            )
+            
+            response = await self.llm_client.chat(
+                messages=[{"role": "user", "content": prompt}],
+                temperature=0.1,
+                system=system_prompt
+            )
+            
+            return parse_llm_json(response, fallback={
+                "dietary": [],
+                "max_time_minutes": None,
+                "max_calories": None,
+                "quantity": None,
+                "min_protein": None,
+                "max_carbs": None,
+                "max_fat": None,
+                "included_ingredients": [],
+                "excluded_ingredients": []
+            })
+        except Exception as e:
+            logger.error(f"Constraint extraction failed: {e}")
+            return {}
+
+    async def rerank_results(self, user_query: str, recipes: List[Dict]) -> List[Dict]:
+        """
+        Re-rank recipes based on relevance to user query using LLM.
+        """
+        if not recipes:
+            return []
+            
+        try:
+            # Prepare simplified recipe list for LLM to save tokens
+            candidates = []
+            for r in recipes:
+                candidates.append({
+                    "id": r.get("id"),
+                    "name": r.get("name"),
+                    "description": r.get("description", "")[:100],
+                    "ingredients": [i["name"] for i in r.get("ingredients", [])[:5]]
+                })
+            
+            config = self.prompt_loader.get_llm_prompt("recipe_reranking")
+            system_prompt = "\n".join(config.get("system", []))
+            user_template = "\n".join(config.get("user_template", []))
+            
+            prompt = self.prompt_loader.format_prompt(
+                user_template,
+                recipes_json=json.dumps(candidates),
+                user_query=user_query
+            )
+            
+            response = await self.llm_client.chat(
+                messages=[{"role": "user", "content": prompt}],
+                temperature=0.1,
+                system=system_prompt
+            )
+            
+            rankings = parse_llm_json(response)
+            if not isinstance(rankings, list):
+                return recipes
+
+            # Create a map of scores
+            scores = {str(r.get("id")): r.get("score", 0) for r in rankings}
+            
+            # Sort original recipes by score
+            recipes.sort(key=lambda x: scores.get(str(x.get("id")), 0), reverse=True)
+            
+            logger.info(f"Re-ranked {len(recipes)} recipes")
+            return recipes
+            
+        except Exception as e:
+            logger.error(f"Re-ranking failed: {e}")
+            return recipes
+
     async def get_recipe_recommendations(
         self,
         user_query: str,
@@ -53,28 +167,28 @@ class RecipeRAGService:
         dietary_restrictions: Optional[List[str]] = None,
         max_calories: Optional[float] = None,
         n_results: int = 5,
-        metadata_filter: Optional[Dict[str, Any]] = None
+        metadata_filter: Optional[Dict[str, Any]] = None,
+        system_instruction: Optional[str] = None,
+        min_protein: Optional[float] = None,
+        max_carbs: Optional[float] = None,
+        max_fat: Optional[float] = None,
+        included_ingredients: Optional[List[str]] = None,
+        excluded_ingredients: Optional[List[str]] = None
     ) -> Dict[str, Any]:
         """
         Get recipe recommendations based on user preferences with full recipe context.
         
         This implements TRUE RAG:
-        1. Semantic search via ChromaDB (retrieval)
-        2. Fetch full recipe details from PostgreSQL (augmentation)
-        3. Generate personalized recommendations via LLM (generation)
-        
-        Args:
-            user_query: Natural language description of what user wants
-            db: Database session for fetching full recipe details
-            dietary_restrictions: List of dietary restrictions (e.g., ["vegetarian", "gluten-free"])
-            max_calories: Maximum calories per serving
-            n_results: Number of recipes to retrieve
-            metadata_filter: Optional metadata filter for ChromaDB (e.g., {"time": {"$lte": 30}})
-            
-        Returns:
-            Dictionary with full recipe details, recommendations and explanations
+        1. Query Transformation (LLM)
+        2. Semantic search via ChromaDB (retrieval)
+        3. Re-ranking (LLM)
+        4. Fetch full recipe details from the SQL database (augmentation)
+        5. Generate personalized recommendations via LLM (generation)
         """
         logger.info(f"Getting recommendations for query: {user_query}")
+        
+        # Step 0: Query Transformation
+        search_query = await self.transform_query(user_query)
         
         # Build filter for vector search - merge with provided metadata_filter
         filter_dict = metadata_filter.copy() if metadata_filter else {}
@@ -82,22 +196,23 @@ class RecipeRAGService:
             filter_dict["calories"] = {"$lte": max_calories}
         
         # Step 1: RETRIEVAL - Semantic search for similar recipes
+        # Fetch more candidates for re-ranking (5x requested to allow for filtering)
+        candidate_count = n_results * 5
         similar_recipes_metadata = self.vector_store.search_recipes(
-            query=user_query,
-            n_results=n_results * 2,  # Get more results to filter
+            query=search_query,
+            n_results=candidate_count,
             filter_dict=filter_dict if filter_dict else None
         )
         
         logger.info(f"Found {len(similar_recipes_metadata)} similar recipes from vector search")
         
-        # Post-filter by time constraint if specified (in case ChromaDB filter didn't work)
+        # Post-filter by time constraint if specified
         if metadata_filter and "time" in metadata_filter:
             max_time = metadata_filter["time"].get("$lte")
             if max_time:
                 time_filtered = []
                 for recipe in similar_recipes_metadata:
                     recipe_time = recipe.get('time', 0)
-                    # Convert to float if it's a string
                     try:
                         recipe_time = float(recipe_time) if recipe_time else 0
                     except:
@@ -106,9 +221,65 @@ class RecipeRAGService:
                     if recipe_time > 0 and recipe_time <= max_time:
                         time_filtered.append(recipe)
                 similar_recipes_metadata = time_filtered
-                logger.info(f"After time filter (<= {max_time} min): {len(similar_recipes_metadata)} recipes")
+
+        # Post-filter by nutritional constraints
+        if min_protein or max_carbs or max_fat:
+            nutri_filtered = []
+            for recipe in similar_recipes_metadata:
+                matches = True
+                if min_protein and recipe.get('protein', 0) < min_protein:
+                    matches = False
+                if max_carbs and recipe.get('carbs', 0) > max_carbs:
+                    matches = False
+                if max_fat and recipe.get('fat', 0) > max_fat:
+                    matches = False
+                
+                if matches:
+                    nutri_filtered.append(recipe)
+            similar_recipes_metadata = nutri_filtered
+            logger.info(f"After nutritional filtering: {len(similar_recipes_metadata)} recipes")
+
+        # Post-filter by ingredient exclusions AND empty ingredients
+        # We always filter out recipes with no ingredients as they are low quality
+        excl_filtered = []
+        for recipe in similar_recipes_metadata:
+            ingredients = recipe.get('ingredients', [])
+            instructions = recipe.get('instructions', [])
+            
+            # Normalize ingredients to string list if needed
+            if isinstance(ingredients, str):
+                try:
+                    ingredients = json.loads(ingredients)
+                except:
+                    ingredients = []
+            
+            # Normalize instructions if needed
+            if isinstance(instructions, str):
+                try:
+                    instructions = json.loads(instructions)
+                except:
+                    instructions = []
+            
+            # Filter out recipes with no ingredients (instructions are optional for this dataset)
+            if not ingredients:
+                continue
+
+            # Check for exclusions
+            has_excluded = False
+            if excluded_ingredients:
+                ing_text = " ".join([str(i).lower() for i in ingredients])
+                for excluded in excluded_ingredients:
+                    if excluded.lower() in ing_text:
+                        has_excluded = True
+                        break
+            
+            if not has_excluded:
+                excl_filtered.append(recipe)
         
-        # Filter by dietary restrictions if specified
+        similar_recipes_metadata = excl_filtered
+        logger.info(f"After exclusion and quality filtering: {len(similar_recipes_metadata)} recipes")
+        
+        # Filter by dietary restrictions
         if dietary_restrictions:
             filtered_recipes = []
             for recipe in similar_recipes_metadata:
@@ -120,14 +291,11 @@ class RecipeRAGService:
                         keywords = []
                 keywords_lower = [k.lower() for k in keywords]
                 
-                # Check if recipe matches restrictions
                 matches = True
                 for restriction in dietary_restrictions:
                     restriction_lower = restriction.lower()
                     if restriction_lower not in keywords_lower:
-                        # Check if it's a negative restriction (e.g., "no meat")
                         if "vegetarian" in restriction_lower or "vegan" in restriction_lower:
-                            # Check if recipe contains meat keywords
                             meat_keywords = ["chicken", "beef", "pork", "meat", "fish", "seafood"]
                             if any(mk in keywords_lower for mk in meat_keywords):
                                 matches = False
@@ -135,21 +303,17 @@ class RecipeRAGService:
                 
                 if matches:
                     filtered_recipes.append(recipe)
-                    
-                if len(filtered_recipes) >= n_results:
-                    break
             
-            similar_recipes_metadata = filtered_recipes[:n_results]
-        else:
-            similar_recipes_metadata = similar_recipes_metadata[:n_results]
+            similar_recipes_metadata = filtered_recipes
         
-        # Step 2: AUGMENTATION - Fetch full recipe details from PostgreSQL
+        # Step 2: AUGMENTATION - Fetch full recipe details from the SQL database
+        # We need full details for re-ranking
         full_recipes = []
         for recipe_meta in similar_recipes_metadata:
             recipe_id = recipe_meta.get('recipe_id')
             if recipe_id:
                 try:
-                    # Try to fetch from PostgreSQL (user-created recipes)
+                    # Try to fetch from the SQL database (user-created recipes)
                     recipe_model = get_recipe(db, int(recipe_id))
                     if recipe_model:
                         # Convert to dict with full details
@@ -165,13 +329,36 @@ class RecipeRAGService:
         
         logger.info(f"Retrieved {len(full_recipes)} full recipes with complete context")
         
-        # Step 3: GENERATION - Use LLM with full recipe context
+        # Step 3: RE-RANKING - Score recipes by relevance
+        ranked_recipes = await self.rerank_results(user_query, full_recipes)
+        
+        # Take top N results after re-ranking with some randomness for variety
+        if len(ranked_recipes) > n_results:
+            # Select from a larger pool (top 2x requested) to ensure variety
+            pool_size = min(len(ranked_recipes), n_results * 2)
+            top_pool = ranked_recipes[:pool_size]
+            
+            # Randomly sample from the top pool
+            final_recipes = random.sample(top_pool, n_results)
+            
+            # Sort back by original ranking (relevance)
+            final_recipes.sort(key=lambda x: ranked_recipes.index(x))
+        else:
+            final_recipes = ranked_recipes
+        
+        # Step 4: GENERATION - Use LLM with full recipe context
         recommendations = await self._generate_recommendations_with_llm(
             user_query=user_query,
-            recipes=full_recipes,
+            recipes=final_recipes,
             dietary_restrictions=dietary_restrictions,
             max_calories=max_calories,
-            metadata_filter=filter_dict
+            metadata_filter=filter_dict,
+            system_instruction=system_instruction,
+            min_protein=min_protein,
+            max_carbs=max_carbs,
+            max_fat=max_fat,
+            included_ingredients=included_ingredients,
+            excluded_ingredients=excluded_ingredients
         )
         
         return recommendations
@@ -182,7 +369,13 @@ class RecipeRAGService:
         recipes: List[Dict[str, Any]],
         dietary_restrictions: Optional[List[str]],
         max_calories: Optional[float],
-        metadata_filter: Optional[Dict[str, Any]] = None
+        metadata_filter: Optional[Dict[str, Any]] = None,
+        system_instruction: Optional[str] = None,
+        min_protein: Optional[float] = None,
+        max_carbs: Optional[float] = None,
+        max_fat: Optional[float] = None,
+        included_ingredients: Optional[List[str]] = None,
+        excluded_ingredients: Optional[List[str]] = None
     ) -> Dict[str, Any]:
         """
         Use LLM to generate personalized recommendations with FULL recipe context.
@@ -193,6 +386,12 @@ class RecipeRAGService:
             dietary_restrictions: User's dietary restrictions
             max_calories: Maximum calorie constraint
             metadata_filter: Optional metadata filter (e.g., {"time": {"$lte": 30}})
+            system_instruction: Optional instruction for the LLM (e.g. about result limits)
+            min_protein: Minimum protein constraint
+            max_carbs: Maximum carbs constraint
+            max_fat: Maximum fat constraint
+            included_ingredients: Ingredients to include
+            excluded_ingredients: Ingredients to exclude
             
         Returns:
             Recommendations with explanations
@@ -242,6 +441,16 @@ class RecipeRAGService:
             constraints.append(f"Dietary restrictions: {', '.join(dietary_restrictions)}")
         if max_calories:
             constraints.append(f"Maximum calories per serving: {max_calories}")
+        if min_protein:
+            constraints.append(f"Minimum protein: {min_protein}g")
+        if max_carbs:
+            constraints.append(f"Maximum carbs: {max_carbs}g")
+        if max_fat:
+            constraints.append(f"Maximum fat: {max_fat}g")
+        if included_ingredients:
+            constraints.append(f"Must include: {', '.join(included_ingredients)}")
+        if excluded_ingredients:
+            constraints.append(f"Must exclude: {', '.join(excluded_ingredients)}")
         if metadata_filter and "time" in metadata_filter:
             max_time = metadata_filter["time"].get("$lte")
             if max_time:
@@ -253,6 +462,7 @@ class RecipeRAGService:
         prompt = f"""I have retrieved the following recipes based on the user's request. Each recipe includes full ingredients and cooking steps.
 
 User's request: "{user_query}"
+{f"System Note: {system_instruction}" if system_instruction else ""}
 
 Constraints:
 {constraints_text}
@@ -328,7 +538,7 @@ Keep your response friendly and concise (2-3 paragraphs)."""
             recipe_id = recipe_meta.get('recipe_id')
             if recipe_id:
                 try:
-                    # Try PostgreSQL first
+                    # Try the SQL database first
                     recipe_model = get_recipe(db, int(recipe_id))
                     if recipe_model:
                         full_recipes.append(self._model_to_dict(recipe_model))
@@ -352,7 +562,7 @@ Keep your response friendly and concise (2-3 paragraphs)."""
             Full recipe dictionary with ingredients and instructions, or None if not found
         """
         try:
-            # Try PostgreSQL first
+            # Try the SQL database first
             recipe_model = get_recipe(db, int(recipe_id))
             if recipe_model:
                 return self._model_to_dict(recipe_model)

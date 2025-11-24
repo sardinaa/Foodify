@@ -6,6 +6,8 @@ Uses oEmbed APIs, Open Graph metadata, and platform-specific techniques.
 import httpx
 import json
 import re
+import subprocess
+import shutil
 from typing import Dict, Optional
 from urllib.parse import urlparse
 
@@ -14,6 +16,9 @@ from app.utils.text_cleaning import (
     extract_social_media_content,
     is_social_media_url,
 )
+from app.core.logging import get_logger
+
+logger = get_logger("services.social_media_scraper")
 
 
 class SocialMediaScraper:
@@ -91,74 +96,100 @@ class SocialMediaScraper:
                 }
                 
         except Exception as e:
-            print(f"⚠️ Error scraping YouTube: {e}")
+            logger.error(f"Error scraping YouTube: {e}")
             return None
     
+    def _get_ytdlp_metadata(self, url: str) -> Optional[Dict]:
+        """Extract metadata using yt-dlp."""
+        if not shutil.which("yt-dlp"):
+            logger.warning("yt-dlp not found. Skipping metadata extraction.")
+            return None
+            
+        try:
+            cmd = [
+                "yt-dlp",
+                "--dump-json",
+                "--skip-download",
+                "--no-warnings",
+                url
+            ]
+            result = subprocess.run(cmd, capture_output=True, text=True, timeout=30)
+            
+            if result.returncode == 0:
+                return json.loads(result.stdout)
+            else:
+                logger.warning(f"yt-dlp failed: {result.stderr[:200]}")
+                return None
+        except Exception as e:
+            logger.error(f"Error running yt-dlp: {e}")
+            return None
+
     async def _scrape_tiktok(self, url: str) -> Optional[Dict]:
-        """Extract TikTok video metadata using oEmbed."""
+        """Extract TikTok video metadata using yt-dlp (primary) or oEmbed (fallback)."""
+        # Try yt-dlp first (more reliable for captions)
+        ytdlp_data = self._get_ytdlp_metadata(url)
+        if ytdlp_data:
+            description = ytdlp_data.get("description", "")
+            title = ytdlp_data.get("title", "")
+            uploader = ytdlp_data.get("uploader", "")
+            
+            text_content = f"Title: {title}\nAuthor: {uploader}\n\nCaption: {description}"
+            
+            return {
+                'html': '',  # No HTML needed if we have direct metadata
+                'text': text_content,
+                'metadata': ytdlp_data
+            }
+
+        # Fallback to oEmbed
         try:
             async with httpx.AsyncClient(timeout=30.0) as client:
-                # TikTok oEmbed
                 oembed_url = f"https://www.tiktok.com/oembed?url={url}"
                 response = await client.get(oembed_url)
                 
                 if response.status_code == 200:
                     metadata = response.json()
                     text_content = f"Title: {metadata.get('title', '')}\nAuthor: {metadata.get('author_name', '')}"
-                    
-                    # Also try direct HTML fetch
-                    headers = {"User-Agent": self.user_agent}
-                    html_response = await client.get(url, headers=headers, follow_redirects=True)
-                    
                     return {
-                        'html': html_response.text,
+                        'html': '',
                         'text': text_content,
                         'metadata': metadata
                     }
-                    
         except Exception as e:
-            print(f"⚠️ Error scraping TikTok: {e}")
-            return None
+            logger.warning(f"Error scraping TikTok: {e}")
+            
+        return None
     
     async def _scrape_instagram(self, url: str) -> Optional[Dict]:
         """
-        Extract Instagram post metadata.
-        
-        NOTE: Instagram heavily blocks automated scraping and requires login
-        for most content. This function will try to extract whatever is available
-        but will likely get blocked.
+        Extract Instagram post metadata using yt-dlp.
         """
-        try:
-            async with httpx.AsyncClient(timeout=30.0) as client:
-                # Try direct HTML fetch with good headers
-                headers = {
-                    "User-Agent": self.user_agent,
-                    "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
-                    "Accept-Language": "en-US,en;q=0.9",
-                }
-                response = await client.get(url, headers=headers, follow_redirects=True)
-                html_content = response.text
-                
-                # Check if we got a login page or blocked
-                if any(indicator in html_content.lower() for indicator in [
-                    'login', 'log in', 'sign up', 'create an account',
-                    'suspicious activity', 'blocked', 'rate limit'
-                ]):
-                    print(f"⚠️ Instagram appears to be requiring login or blocking access")
-                    print(f"📋 Recommendation: Copy the post caption and paste it into chat instead")
-                
-                return {
-                    'html': html_content,
-                    'text': '',
-                    'metadata': {}
-                }
-                
-        except Exception as e:
-            print(f"⚠️ Error scraping Instagram: {e}")
-            return None
+        # Try yt-dlp (works for Reels and some posts)
+        ytdlp_data = self._get_ytdlp_metadata(url)
+        if ytdlp_data:
+            description = ytdlp_data.get("description", "")
+            caption = ytdlp_data.get("caption", "") # Sometimes in caption field
+            
+            text_content = f"Caption: {description or caption}"
+            
+            return {
+                'html': '',
+                'text': text_content,
+                'metadata': ytdlp_data
+            }
+            
+        # TODO: Add Apify fallback here
+        
+        logger.warning(f"Instagram scraping failed with yt-dlp. Login required for HTML scraping.")
+        return None
     
     async def _scrape_twitter(self, url: str) -> Optional[Dict]:
-        """Extract Twitter/X post metadata."""
+        """
+        Extract Twitter/X post metadata.
+        
+        TODO: This is a placeholder implementation. Twitter/X heavily blocks automated scraping.
+        Consider using a professional scraping service (e.g., Apify) or yt-dlp for better results.
+        """
         try:
             async with httpx.AsyncClient(timeout=30.0) as client:
                 headers = {
@@ -174,7 +205,7 @@ class SocialMediaScraper:
                 }
                 
         except Exception as e:
-            print(f"⚠️ Error scraping Twitter: {e}")
+            logger.warning(f"Error scraping Twitter: {e}")
             return None
     
     async def _scrape_generic(self, url: str) -> Optional[Dict]:
@@ -191,7 +222,7 @@ class SocialMediaScraper:
                 }
                 
         except Exception as e:
-            print(f"⚠️ Error scraping URL: {e}")
+            logger.warning(f"Error scraping URL: {e}")
             return None
     
     def _extract_youtube_id(self, url: str) -> Optional[str]:
@@ -238,11 +269,11 @@ async def fetch_social_media_content(url: str) -> Optional[Dict]:
     
     platform = detect_social_platform(url)
     if not platform:
-        print(f"⚠️ URL does not appear to be from a supported social media platform")
+        logger.warning(f"URL does not appear to be from a supported social media platform")
         return None
     
-    print(f"🌐 Detected platform: {platform}")
-    print(f"🔄 Fetching content using {platform}-specific extraction...")
+    logger.info(f"Detected platform: {platform}")
+    logger.info(f"Fetching content using {platform}-specific extraction...")
     
     result = await scraper.scrape_url(url)
     if result:
@@ -252,8 +283,8 @@ async def fetch_social_media_content(url: str) -> Optional[Dict]:
             result['text'] = extracted.get('content', '')
         html_len = len(html)
         text_len = len(result.get('text', ''))
-        print(f"✓ Successfully extracted {html_len} chars HTML, {text_len} chars text")
+        logger.info(f"Successfully extracted {html_len} chars HTML, {text_len} chars text")
         return result
     
-    print(f"⚠️ Failed to extract content from {platform}")
+    logger.warning(f"Failed to extract content from {platform}")
     return None

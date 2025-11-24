@@ -8,6 +8,9 @@ from typing import Dict, Optional
 from app.core.llm_client import get_llm_client
 from app.services.conversation_memory import ConversationMemory
 from app.utils.prompt_loader import get_prompt_loader
+from app.core.logging import get_logger
+
+logger = get_logger("services.chat.intent")
 
 
 async def analyze_conversation_context(
@@ -21,7 +24,7 @@ async def analyze_conversation_context(
     previous_recipes = []
 
     if memory:
-        history = memory.get_conversation_history(limit=8)
+        history = await memory.get_conversation_history(limit=8)
         if history:
             history_lines = []
             for msg in history:
@@ -60,14 +63,14 @@ async def analyze_conversation_context(
             json_str = cleaned_response[json_start:json_end]
             context_analysis = json.loads(json_str)
 
-            print(
+            logger.debug(
                 f"[Context Analysis] Action: {context_analysis.get('action')}, Items: "
                 f"{len(context_analysis.get('referenced_items', []))}"
             )
 
             for item in context_analysis.get("referenced_items", []):
                 item_name = item.get("name", "").lower()
-                print(f"[Context Analysis] Looking for recipe matching: {item_name}")
+                logger.debug(f"[Context Analysis] Looking for recipe matching: {item_name}")
                 for prev_recipe in previous_recipes:
                     prev_name = prev_recipe.get("name", "").lower()
                     if (
@@ -76,15 +79,15 @@ async def analyze_conversation_context(
                         or any(word in prev_name for word in item_name.split() if len(word) > 3)
                     ):
                         item["matched_recipe"] = prev_recipe
-                        print(
+                        logger.debug(
                             f"[Context Analysis] Matched '{item_name}' to '{prev_recipe.get('name')}'"
                         )
                         break
 
             return context_analysis
     except Exception as exc:
-        print(f"Failed to parse context analysis: {exc}")
-        print(f"Raw response was: {response[:200]}")
+        logger.warning(f"Failed to parse context analysis: {exc}")
+        logger.debug(f"Raw response was: {response[:200]}")
 
     message_lower = message.lower()
     menu_modification_words = ["change", "replace", "swap", "modify", "remove", "update"]
@@ -107,7 +110,7 @@ async def analyze_conversation_context(
     )
 
     if has_menu_modification and (has_day_reference or has_meal_reference) and is_previous_menu:
-        print("[Context Analysis] Fallback: Detected menu modification request")
+        logger.info("[Context Analysis] Fallback: Detected menu modification request")
         return {
             "action": "modify_menu",
             "referenced_items": [
@@ -121,7 +124,7 @@ async def analyze_conversation_context(
 
     reference_words = ["this", "it", "that", "the recipe", "include it", "add it", "use it"]
     if any(word in message_lower for word in reference_words) and previous_recipes:
-        print("[Context Analysis] Fallback: Detected reference word, using most recent recipe")
+        logger.info("[Context Analysis] Fallback: Detected reference word, using most recent recipe")
         return {
             "action": "include_in_new",
             "referenced_items": [
@@ -170,7 +173,7 @@ async def detect_user_intent_with_llm(
 
     history_context = "(No previous conversation)"
     if memory:
-        history = memory.get_conversation_history(limit=6)
+        history = await memory.get_conversation_history(limit=6)
         if history:
             history_lines = []
             for msg in history[-4:]:
@@ -181,7 +184,8 @@ async def detect_user_intent_with_llm(
 
     image_context = "Note: User has attached an image." if image_present else ""
 
-    intent_config = prompt_loader.get_llm_prompt("intent_classification")
+    # Use new structured intent classification
+    intent_config = prompt_loader.get_llm_prompt("intent_classification_json")
     system_prompt = "\n".join(intent_config.get("system", []))
     user_template = "\n".join(intent_config.get("user_template", []))
 
@@ -199,6 +203,30 @@ async def detect_user_intent_with_llm(
         system=system_prompt,
     )
 
+    try:
+        # Parse JSON response
+        from app.utils.json_parser import parse_llm_json
+        result = parse_llm_json(response)
+        intent = result.get("intent", "recipe_search").lower()
+        confidence = result.get("confidence", 0.0)
+        logger.info(f"[Intent Detection] Intent: {intent}, Confidence: {confidence}, Reason: {result.get('reasoning')}")
+        
+        valid_intents = [
+            "url_analysis",
+            "weekly_menu",
+            "modification",
+            "nutrition",
+            "ingredients",
+            "recipe_search",
+        ]
+        
+        if intent in valid_intents:
+            return intent
+            
+    except Exception as e:
+        logger.error(f"[Intent Detection] Failed to parse JSON: {e}. Fallback to text analysis.")
+
+    # Fallback to simple text matching if JSON parsing fails
     intent = response.strip().lower()
     valid_intents = [
         "url_analysis",

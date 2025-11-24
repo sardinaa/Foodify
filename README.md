@@ -164,6 +164,12 @@ Docker Deployment (Optional):
 - **Location**: `data/nutrition_data.csv`
 - **Quality**: Cleaned, normalized, and deduplicated
 
+### Recipe Dataset
+- **Source**: HuggingFace [`datahiveai/recipes-with-nutrition`](https://huggingface.co/datasets/datahiveai/recipes-with-nutrition)
+- **Access**: Pulled on-demand during ingestion (`backend/scripts/ingest_data.py`)
+- **Storage**: Persisted in SQLite (`backend/foodify.db`) and indexed in ChromaDB (`backend/chroma_db/`)
+- **Status**: Legacy CSV dumps (`AkashPS11/recipes_data_food.com`) have been removed in favor of the richer HuggingFace dataset
+
 ### Recipe Embeddings
 - **Vector Database**: ChromaDB
 - **Embedding Model**: all-MiniLM-L6-v2 (Sentence Transformers)

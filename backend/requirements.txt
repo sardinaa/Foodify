@@ -27,3 +27,5 @@ chromadb>=0.5.0      # Vector database for semantic search
 sentence-transformers>=3.0.0  # Embedding models for recipe similarity
 langchain>=0.3.0    # Framework for building RAG applications
 langchain-community>=0.3.0   # Community integrations for LangChain
+matplotlib>=3.8.0    # Plotting library for EDA
+seaborn>=0.13.0      # Statistical data visualization

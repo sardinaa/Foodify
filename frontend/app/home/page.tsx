@@ -139,6 +139,11 @@ export default function HomePage() {
         protein: fullRecipe.protein || 0,
         carbs: fullRecipe.carbs || 0,
         fat: fullRecipe.fat || 0,
+        fiber: fullRecipe.fiber,
+        sugar: fullRecipe.sugar,
+        saturated_fat: fullRecipe.saturated_fat,
+        cholesterol: fullRecipe.cholesterol,
+        sodium: fullRecipe.sodium,
         time: fullRecipe.time || 30,
         keywords: fullRecipe.keywords || [],
       });

@@ -60,25 +60,20 @@ async def get_recipe_recommendations(
     
     Uses FULL RAG (Retrieval Augmented Generation):
     - Semantic search via ChromaDB
-    - Full recipe retrieval from PostgreSQL
+    - Full recipe retrieval from the SQL (SQLite) database
     - LLM-generated personalized recommendations
     
     Returns complete recipes with ingredients and steps.
     """
-    try:
-        recommendations = await rag_service.get_recipe_recommendations(
-            user_query=request.query,
-            db=db,
-            dietary_restrictions=request.dietary_restrictions,
-            max_calories=request.max_calories,
-            n_results=request.n_results
-        )
-        
-        return recommendations
-        
-    except Exception as e:
-        logger.error(f"Error getting recommendations: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+    recommendations = await rag_service.get_recipe_recommendations(
+        user_query=request.query,
+        db=db,
+        dietary_restrictions=request.dietary_restrictions,
+        max_calories=request.max_calories,
+        n_results=request.n_results
+    )
+    
+    return recommendations
 
 
 @router.post("/search-by-ingredients")
@@ -92,25 +87,20 @@ async def search_by_ingredients(
     Returns complete recipes (with ingredients & steps) that contain or work well 
     with the specified ingredients. Uses unified RAG search.
     """
-    try:
-        # Create natural language query from ingredients
-        query = f"recipes with {', '.join(request.ingredients)}"
-        
-        recipes = await rag_service.search_recipes_with_full_context(
-            query=query,
-            db=db,
-            n_results=request.n_results
-        )
-        
-        return {
-            "ingredients": request.ingredients,
-            "recipes": recipes,
-            "total_results": len(recipes)
-        }
-        
-    except Exception as e:
-        logger.error(f"Error searching by ingredients: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+    # Create natural language query from ingredients
+    query = f"recipes with {', '.join(request.ingredients)}"
+    
+    recipes = await rag_service.search_recipes_with_full_context(
+        query=query,
+        db=db,
+        n_results=request.n_results
+    )
+    
+    return {
+        "ingredients": request.ingredients,
+        "recipes": recipes,
+        "total_results": len(recipes)
+    }
 
 
 @router.get("/search-by-category")

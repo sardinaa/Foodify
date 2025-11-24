@@ -23,6 +23,12 @@ class RecipeModel(Base):
     source_type = Column(String(50), nullable=False)  # "image", "url", "chat", "dataset"
     source_ref = Column(String(500), nullable=True)
     category = Column(String(100), nullable=True)  # Recipe category from dataset
+    
+    # New metadata fields
+    cuisine_type = Column(String(100), nullable=True)
+    meal_type = Column(String(100), nullable=True)
+    dish_type = Column(String(100), nullable=True)
+    
     created_at = Column(DateTime, default=datetime.utcnow)
     
     # Relationships

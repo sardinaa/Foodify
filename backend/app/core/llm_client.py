@@ -4,42 +4,32 @@ Model-agnostic interface for recipe generation and chat.
 """
 import json
 from typing import List, Dict, Optional, Tuple
-import httpx
 
-from app.core.config import get_settings
 from app.db.schema import RecipeBase, IngredientBase, RecipeStepBase
-from app.utils.prompt_loader import get_prompt_loader
+from app.core.logging import get_logger
+from app.core.base_client import BaseAIClient
+
+logger = get_logger("core.llm_client")
 
 
-class LLMClient:
+class LLMClient(BaseAIClient):
     """Client for interacting with Language Models."""
-    
-    def __init__(self):
-        self.settings = get_settings()
-        self.prompt_loader = get_prompt_loader()
     
     async def _call_ollama(self, prompt: str, system: Optional[str] = None) -> str:
         """Call Ollama API."""
         url = f"{self.settings.llm_base_url}/api/generate"
-        print(f"[LLM Client] Calling {url} with model {self.settings.llm_model}")
-        print(f"[LLM Client] Prompt preview: {prompt[:200]}...")
         
-        async with httpx.AsyncClient(timeout=120.0) as client:
-            payload = {
-                "model": self.settings.llm_model,
-                "prompt": prompt,
-                "stream": False
-            }
-            
-            if system:
-                payload["system"] = system
-            
-            response = await client.post(url, json=payload)
-            print(f"[LLM Client] Response status: {response.status_code}")
-            if response.status_code != 200:
-                print(f"[LLM Client] Error response: {response.text[:500]}")
-            response.raise_for_status()
-            return response.json()["response"]
+        payload = {
+            "model": self.settings.llm_model,
+            "prompt": prompt,
+            "stream": False
+        }
+        
+        if system:
+            payload["system"] = system
+        
+        response_json = await self._make_request(url, payload, log_prefix="LLM Client")
+        return response_json["response"]
     
     async def chat(
         self,
@@ -70,26 +60,21 @@ class LLMClient:
         
         prompt = "\n\n".join(prompt_parts)
         
-        # Call Ollama with temperature
-        async with httpx.AsyncClient(timeout=120.0) as client:
-            payload = {
-                "model": self.settings.llm_model,
-                "prompt": prompt,
-                "stream": False,
-                "options": {
-                    "temperature": temperature
-                }
+        url = f"{self.settings.llm_base_url}/api/generate"
+        payload = {
+            "model": self.settings.llm_model,
+            "prompt": prompt,
+            "stream": False,
+            "options": {
+                "temperature": temperature
             }
-            
-            if system:
-                payload["system"] = system
-            
-            response = await client.post(
-                f"{self.settings.llm_base_url}/api/generate",
-                json=payload
-            )
-            response.raise_for_status()
-            return response.json()["response"]
+        }
+        
+        if system:
+            payload["system"] = system
+        
+        response_json = await self._make_request(url, payload, log_prefix="LLM Client")
+        return response_json["response"]
     
     async def generate_recipe_from_text(self, raw_text: str) -> RecipeBase:
         """
@@ -131,8 +116,8 @@ class LLMClient:
             )
         except (json.JSONDecodeError, KeyError) as e:
             # Don't silently fail - raise an exception so caller knows extraction failed
-            print(f"❌ Failed to parse LLM response as recipe JSON: {e}")
-            print(f"📝 LLM Response: {response[:500]}")
+            logger.error(f"Failed to parse LLM response as recipe JSON: {e}")
+            logger.debug(f"LLM Response: {response[:500]}")
             raise ValueError(f"Could not extract recipe from text. LLM response was not valid JSON: {e}")
     
     async def normalize_dish_name_and_tags(

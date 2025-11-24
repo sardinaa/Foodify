@@ -5,9 +5,13 @@ Just tracks message history for context continuity.
 from typing import List, Dict, Optional
 from sqlalchemy.orm import Session
 import json
+import asyncio
+from concurrent.futures import ThreadPoolExecutor
 
 from app.db import crud_chat
 
+# Create a global executor for DB operations
+db_executor = ThreadPoolExecutor(max_workers=5)
 
 class ConversationMemory:
     """
@@ -25,17 +29,22 @@ class ConversationMemory:
         """
         self.db = db
         self.session_id = session_id
-        self.session = crud_chat.get_or_create_session(db, session_id)
     
-    def add_message(
+    async def _run_sync(self, func, *args):
+        """Run a synchronous DB function in a thread pool."""
+        loop = asyncio.get_running_loop()
+        return await loop.run_in_executor(db_executor, func, *args)
+
+    async def add_message(
         self,
         role: str,
         content: str,
         intent: Optional[str] = None,
         recipe_ids: Optional[List[int]] = None
     ) -> None:
-        """Add a message to the conversation history."""
-        crud_chat.add_message(
+        """Add a message to the conversation history asynchronously."""
+        await self._run_sync(
+            crud_chat.add_message,
             self.db,
             self.session_id,
             role,
@@ -44,9 +53,9 @@ class ConversationMemory:
             recipe_ids
         )
     
-    def get_conversation_history(self, limit: Optional[int] = 5) -> List[Dict]:
+    async def get_conversation_history(self, limit: Optional[int] = 5) -> List[Dict]:
         """
-        Get recent conversation history.
+        Get recent conversation history asynchronously.
         
         Args:
             limit: Number of recent messages to retrieve (default: 5)
@@ -54,7 +63,13 @@ class ConversationMemory:
         Returns:
             List of message dictionaries with role, content, and optionally recipes
         """
-        messages = crud_chat.get_conversation_history(self.db, self.session_id, limit)
+        messages = await self._run_sync(
+            crud_chat.get_conversation_history, 
+            self.db, 
+            self.session_id, 
+            limit
+        )
+        
         result = []
         
         for msg in messages:
@@ -77,14 +92,14 @@ class ConversationMemory:
         
         return result
     
-    def get_context_for_prompt(self) -> str:
+    async def get_context_for_prompt(self) -> str:
         """
         Get recent conversation formatted as context string for LLM.
         
         Returns:
             Formatted conversation history
         """
-        history = self.get_conversation_history(limit=6)  # Last 3 exchanges (6 messages)
+        history = await self.get_conversation_history(limit=6)  # Last 3 exchanges (6 messages)
         
         if not history:
             return ""
@@ -96,24 +111,24 @@ class ConversationMemory:
         
         return "\n".join(context_parts)
     
-    def record_user_message(self, message: str, intent: str) -> None:
+    async def record_user_message(self, message: str, intent: str) -> None:
         """
-        Record a user message.
+        Record a user message asynchronously.
         
         Args:
             message: User message content
             intent: Detected intent
         """
-        self.add_message("user", message, intent)
+        await self.add_message("user", message, intent)
     
-    def record_assistant_response(
+    async def record_assistant_response(
         self,
         response: str,
         recipe_ids: Optional[List[int]] = None,
         recipes: Optional[List[Dict]] = None
     ) -> None:
         """
-        Record an assistant response.
+        Record an assistant response asynchronously.
         
         Args:
             response: Assistant's response text
@@ -129,4 +144,8 @@ class ConversationMemory:
         else:
             content = response
         
-        self.add_message("assistant", content, None, recipe_ids)
+        await self.add_message("assistant", content, None, recipe_ids)
+
+    async def get_summary(self) -> Dict:
+        """Get session summary asynchronously."""
+        return await self._run_sync(crud_chat.get_session_preferences, self.db, self.session_id)

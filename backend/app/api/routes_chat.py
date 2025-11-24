@@ -42,28 +42,17 @@ async def chat(
     
     Returns conversational reply with structured recipe suggestions or weekly menu.
     """
-    try:
-        # Read image bytes if provided
-        image_bytes = None
-        if image:
-            image_bytes = await image.read()
-        
-        # Run chat agent with automatic intent detection and memory
-        result = await chat_agent_handler(
-            db,
-            session_id,
-            message,
-            image_bytes=image_bytes
-        )
-        
-        return ChatResponse(
-            reply=result["reply"],
-            suggested_recipes=result["suggested_recipes"],
-            weekly_menu=result["weekly_menu"]
-        )
+    # Read image bytes if provided
+    image_bytes = None
+    if image:
+        image_bytes = await image.read()
     
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Chat failed: {str(e)}")
+    # Delegate to agent handler
+    response = await chat_agent_handler(
+        db, session_id, message, image_bytes
+    )
+    
+    return response
 
 
 @router.get("/chat/session/{session_id}")
@@ -85,7 +74,7 @@ async def get_session_summary(
         from app.services.conversation_memory import ConversationMemory
         
         memory = ConversationMemory(db, session_id)
-        summary = memory.get_summary()
+        summary = await memory.get_summary()
         
         return summary
     

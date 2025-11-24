@@ -7,6 +7,9 @@ import tempfile
 import subprocess
 from typing import Optional
 import asyncio
+from app.core.logging import get_logger
+
+logger = get_logger("services.video_transcript")
 
 
 class VideoTranscriptExtractor:
@@ -49,38 +52,38 @@ class VideoTranscriptExtractor:
             Transcript text or None if extraction failed
         """
         if not self.has_ytdlp:
-            print("⚠️  yt-dlp not installed - cannot extract video transcripts")
-            print("💡 Install: pip install yt-dlp")
+            logger.warning("yt-dlp not installed - cannot extract video transcripts")
+            logger.info("Install: pip install yt-dlp")
             return None
         
         if not self.has_whisper:
-            print("⚠️  faster-whisper not installed - cannot transcribe audio")
-            print("💡 Install: pip install faster-whisper")
+            logger.warning("faster-whisper not installed - cannot transcribe audio")
+            logger.info("Install: pip install faster-whisper")
             return None
         
-        print(f"🎬 Attempting to extract transcript from video...")
+        logger.info(f"Attempting to extract transcript from video...")
         
         # Step 1: Try to get existing captions/subtitles first (faster)
         existing_transcript = await self._get_existing_captions(url)
         if existing_transcript:
-            print(f"✓ Found existing captions/subtitles ({len(existing_transcript)} chars)")
+            logger.info(f"Found existing captions/subtitles ({len(existing_transcript)} chars)")
             return existing_transcript
         
         # Step 2: Download audio and transcribe
-        print(f"🔊 No captions found, downloading audio for transcription...")
+        logger.info(f"No captions found, downloading audio for transcription...")
         audio_file = await self._download_audio(url)
         
         if not audio_file:
-            print(f"❌ Failed to download audio from video")
+            logger.error(f"Failed to download audio from video")
             return None
         
         try:
             # Step 3: Transcribe audio
-            print(f"🎤 Transcribing audio (this may take a minute)...")
+            logger.info(f"Transcribing audio (this may take a minute)...")
             transcript = await self._transcribe_audio(audio_file)
             
             if transcript:
-                print(f"✓ Successfully transcribed {len(transcript)} chars from video audio")
+                logger.info(f"Successfully transcribed {len(transcript)} chars from video audio")
             
             return transcript
             
@@ -123,7 +126,7 @@ class VideoTranscriptExtractor:
             return None
             
         except Exception as e:
-            print(f"⚠️  Could not retrieve existing captions: {str(e)[:100]}")
+            logger.warning(f"Could not retrieve existing captions: {str(e)[:100]}")
             return None
     
     async def _download_audio(self, url: str) -> Optional[str]:
@@ -151,11 +154,11 @@ class VideoTranscriptExtractor:
             if result.returncode == 0 and os.path.exists(audio_path):
                 return audio_path
             else:
-                print(f"⚠️  yt-dlp error: {stderr.decode()[:200]}")
+                logger.warning(f"yt-dlp error: {stderr.decode()[:200]}")
                 return None
                 
         except Exception as e:
-            print(f"❌ Error downloading audio: {str(e)}")
+            logger.error(f"Error downloading audio: {str(e)}")
             return None
     
     async def _transcribe_audio(self, audio_path: str) -> Optional[str]:
@@ -167,10 +170,10 @@ class VideoTranscriptExtractor:
             # Options: tiny, base, small, medium, large
             model_size = "base"
             
-            print(f"📥 Loading Whisper {model_size} model...")
+            logger.info(f"Loading Whisper {model_size} model...")
             model = WhisperModel(model_size, device="cpu", compute_type="int8")
             
-            print(f"🔄 Detecting language and transcribing audio...")
+            logger.info(f"Detecting language and transcribing audio...")
             
             # First pass: detect language without full transcription
             # This significantly improves quality
@@ -194,7 +197,7 @@ class VideoTranscriptExtractor:
             detected_language = info.language
             language_probability = info.language_probability
             
-            print(f"🌍 Detected language: {detected_language} (confidence: {language_probability:.2%})")
+            logger.info(f"Detected language: {detected_language} (confidence: {language_probability:.2%})")
             
             # Combine all segments
             transcript_parts = []
@@ -207,12 +210,12 @@ class VideoTranscriptExtractor:
             transcript = ' '.join(transcript_parts).strip()
             
             if transcript:
-                print(f"✓ Transcribed {len(transcript)} chars in {detected_language}")
+                logger.info(f"Transcribed {len(transcript)} chars in {detected_language}")
             
             return transcript if transcript else None
             
         except Exception as e:
-            print(f"❌ Error transcribing audio: {str(e)}")
+            logger.error(f"Error transcribing audio: {str(e)}")
             return None
 
 

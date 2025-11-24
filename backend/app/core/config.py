@@ -22,7 +22,7 @@ class Settings(BaseSettings):
     # RAG Configuration
     embedding_model: str = "sentence-transformers/all-MiniLM-L6-v2"
     vector_store_path: str = "./chroma_db"
-    recipes_dataset: str = "AkashPS11/recipes_data_food.com"
+    recipes_dataset: str = "datahiveai/recipes-with-nutrition"
     
     # LLM Configuration
     llm_provider: str = "ollama"
@@ -37,6 +37,9 @@ class Settings(BaseSettings):
     # Web Scraping
     # For blogs: Uses httpx + BeautifulSoup (fast, simple)
     # For social media: Uses oEmbed APIs, Open Graph metadata, and platform-specific extraction
+    
+    # Logging
+    log_level: str = "INFO"
     
     class Config:
         env_file = ".env"
