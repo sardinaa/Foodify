@@ -29,9 +29,9 @@ Two powerful modes for personalized assistance:
 - Customize based on dietary goals, cuisine preferences, and household size
 - Optimized for variety and nutritional balance
 
-### 🎯 **Recipe Recommendation System (Full RAG)**
+### 🎯 **Recipe Recommendation System**
 Powered by ChromaDB vector database and semantic search with complete recipe context:
-- **Full RAG Implementation**: Semantic search (ChromaDB) + complete recipe retrieval (PostgreSQL/SQLite) + LLM-generated recommendations
+- **RAG Implementation**: Semantic search (ChromaDB) + complete recipe retrieval (SQLite) + LLM-generated recommendations
 - **Complete Context**: Returns full recipes with ingredients, steps, and nutrition—not just metadata
 - **Context-Aware**: Understands recipe relationships and flavor profiles
 - **Conversational Memory**: Maintains chat context for coherent multi-turn interactions
@@ -123,7 +123,6 @@ Docker Deployment (Optional):
 - **Build**: Optimized for containerization
 
 **Data & ML**
-- **Nutrition Dataset**: 2,395 food items (Kaggle)
 - **Embeddings**: Sentence Transformers (all-MiniLM-L6-v2)
 - **RAG Framework**: Custom implementation with full context
 - **Vector Store**: ChromaDB with metadata + full recipe storage
@@ -137,13 +136,6 @@ Docker Deployment (Optional):
 ---
 
 ## 📊 Data
-
-### Nutrition Database
-- **Source**: Kaggle Food Nutrition Dataset
-- **Coverage**: 2,395 unique food items across 5 food groups
-- **Metrics**: Calories, Protein, Carbs, Fat, Dietary Fiber (per 100g)
-- **Location**: `data/nutrition_data.csv`
-- **Quality**: Cleaned, normalized, and deduplicated
 
 ### Recipe Dataset
 - **Source**: HuggingFace [`datahiveai/recipes-with-nutrition`](https://huggingface.co/datasets/datahiveai/recipes-with-nutrition)
@@ -257,34 +249,9 @@ DATABASE_URL=sqlite:///app/foodify.db
 # LLM/VLM Configuration
 LLM_BASE_URL=http://host.docker.internal:11434
 LLM_MODEL=llama3:latest
-VLM_MODEL=qwen3-vl:latest
 
 # Frontend
 NEXT_PUBLIC_API_URL=http://localhost:8000
-```
-
-### Customizing AI Models
-
-To use different Ollama models, edit your `.env` file:
-
-```env
-# For faster inference (smaller models)
-LLM_MODEL=llama3.2:1b
-VLM_MODEL=llava
-
-# For better quality (larger models)
-LLM_MODEL=llama3.2:70b
-VLM_MODEL=llama3.2-vision:90b
-
-# Default (recommended balance)
-LLM_MODEL=llama3.2
-VLM_MODEL=llama3.2-vision
-```
-
-Then restart Docker Compose:
-```bash
-docker-compose down
-docker-compose up -d
 ```
 
 ### Persistent Data
@@ -649,19 +616,8 @@ Built as a technical showcase demonstrating:
 ## 🙏 Acknowledgments
 
 - **Ollama** - For local AI model infrastructure
-- **Kaggle** - Food nutrition dataset
 - **FastAPI** - Modern Python web framework
 - **Next.js** - React framework
 - **ChromaDB** - Vector database for RAG
 - **LangChain** - RAG framework
 - **Hugging Face** - Embedding models
-
----
-
-<div align="center">
-
-**⭐ Star this repo if you find it helpful!**
-
-Made with ❤️ and 🤖
-
-</div>
