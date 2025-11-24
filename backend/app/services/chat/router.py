@@ -12,7 +12,6 @@ from app.services.conversation_memory import ConversationMemory
 Handler = Callable[[Session, str, str, ConversationMemory | None], Awaitable[Dict]]
 
 _HANDLER_PATHS: Dict[str, str] = {
-    "url_analysis": "app.services.chat_agent:handle_url_analysis_mode",
     "modification": "app.services.chat_agent:handle_modification_mode",
     # "ingredients" intent now handled by default recipe_search (full RAG handles it)
     "weekly_menu": "app.services.chat_agent:handle_weekly_menu_mode",
@@ -30,11 +29,6 @@ def get_handler(intent: str) -> Handler:
     """Return the coroutine handler for the provided intent."""
     path = _HANDLER_PATHS.get(intent, _DEFAULT_HANDLER)
     return _resolve_handler(path)
-
-
-def register_intent_handler(intent: str, dotted_path: str) -> None:
-    """Allow runtime overrides for handler routing."""
-    _HANDLER_PATHS[intent] = dotted_path
 
 
 async def dispatch_intent(

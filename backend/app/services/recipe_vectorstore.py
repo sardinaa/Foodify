@@ -72,33 +72,56 @@ class RecipeVectorStore:
         text_parts = []
         
         # Recipe name and description
-        if recipe.get("Name"):
-            text_parts.append(f"Recipe: {recipe['Name']}")
+        if recipe.get("name"):
+            text_parts.append(f"Recipe: {recipe['name']}")
+        elif recipe.get("Name"):
+             text_parts.append(f"Recipe: {recipe['Name']}")
         
-        if recipe.get("Description"):
+        if recipe.get("description"):
+            text_parts.append(f"Description: {recipe['description']}")
+        elif recipe.get("Description"):
             text_parts.append(f"Description: {recipe['Description']}")
         
-        # Category
-        if recipe.get("RecipeCategory"):
-            text_parts.append(f"Category: {recipe['RecipeCategory']}")
+        # Category / Dish Type
+        if recipe.get("dish_type"):
+             text_parts.append(f"Dish Type: {recipe['dish_type']}")
+        if recipe.get("cuisine_type"):
+             text_parts.append(f"Cuisine: {recipe['cuisine_type']}")
+        if recipe.get("meal_type"):
+             text_parts.append(f"Meal Type: {recipe['meal_type']}")
         
-        # Keywords
+        # Tags (Diet/Health labels or Keywords)
+        tags = []
+        if recipe.get("diet_labels"):
+            tags.extend(recipe["diet_labels"])
+        if recipe.get("health_labels"):
+            tags.extend(recipe["health_labels"])
+        
         keywords = self._parse_r_array(recipe.get("Keywords"))
         if keywords:
-            text_parts.append(f"Tags: {', '.join(keywords)}")
-        
+            tags.extend(keywords)
+            
+        if tags:
+            text_parts.append(f"Tags: {', '.join(tags)}")
+
         # Ingredients
-        ingredients = self._parse_r_array(recipe.get("RecipeIngredientParts"))
+        ingredients = recipe.get("ingredients", [])
+        if not ingredients:
+            ingredients = self._parse_r_array(recipe.get("RecipeIngredientParts"))
+            
         if ingredients:
             text_parts.append(f"Ingredients: {', '.join(ingredients)}")
         
         # Instructions
-        instructions = self._parse_r_array(recipe.get("RecipeInstructions"))
+        instructions = recipe.get("instructions", [])
+        if not instructions:
+            instructions = self._parse_r_array(recipe.get("RecipeInstructions"))
+            
         if instructions:
             # Join instructions with periods
             inst_text = ". ".join(instructions[:10])  # Limit to first 10 steps
             text_parts.append(f"Instructions: {inst_text}")
-        
+            
         return "\n".join(text_parts)
     
     def _create_recipe_metadata(self, recipe: Dict[str, Any]) -> Dict[str, Any]:
@@ -107,46 +130,51 @@ class RecipeVectorStore:
         keywords = self._parse_r_array(recipe.get("Keywords"))
         
         # Parse ingredients
-        ingredients = self._parse_r_array(recipe.get("RecipeIngredientParts"))
+        ingredients = recipe.get("ingredients", [])
+        if not ingredients:
+            ingredients = self._parse_r_array(recipe.get("RecipeIngredientParts"))
         
         # Parse instructions
-        instructions = self._parse_r_array(recipe.get("RecipeInstructions"))
+        instructions = recipe.get("instructions", [])
+        if not instructions:
+            instructions = self._parse_r_array(recipe.get("RecipeInstructions"))
         
-        # Parse time values
-        cook_time = recipe.get("CookTime", "")
-        prep_time = recipe.get("PrepTime", "")
-        total_time = recipe.get("TotalTime", "")
-        
-        # Extract minutes from ISO 8601 duration format (e.g., "PT30M" -> 30, "PT2H20M" -> 140)
-        time_minutes = 0
-        if total_time and "PT" in total_time:
-            import re
-            # Extract hours and convert to minutes
-            hours_match = re.search(r'(\d+)H', total_time)
-            if hours_match:
-                time_minutes += int(hours_match.group(1)) * 60
-            # Extract minutes
-            minutes_match = re.search(r'(\d+)M', total_time)
-            if minutes_match:
-                time_minutes += int(minutes_match.group(1))
-        
+        # Calculate servings for normalization
+        servings = float(recipe.get("servings", 0) or recipe.get("RecipeServings", 1))
+        if servings <= 0:
+            servings = 1
+            
+        # Helper to get nutrient value (prefer pre-calculated lowercase, else raw divided by servings)
+        def get_nutrient(key_lower, key_raw):
+            if key_lower in recipe:
+                return float(recipe[key_lower])
+            return float(recipe.get(key_raw, 0)) / servings
+
         return {
-            "recipe_id": str(recipe.get("RecipeId", "")),
-            "name": recipe.get("Name", ""),
-            "category": recipe.get("RecipeCategory", ""),
+            "recipe_id": str(recipe.get("id", "") or recipe.get("RecipeId", "")),
+            "name": recipe.get("name", "") or recipe.get("Name", ""),
+            "cuisine_type": recipe.get("cuisine_type", ""),
+            "meal_type": recipe.get("meal_type", ""),
+            "dish_type": recipe.get("dish_type", ""),
+            "diet_labels": json.dumps(recipe.get("diet_labels", [])),
+            "health_labels": json.dumps(recipe.get("health_labels", [])),
             "keywords": json.dumps(keywords),  # Store as JSON string
             "ingredients": json.dumps(ingredients),  # Store as JSON string
             "instructions": json.dumps(instructions),  # Store as JSON string
-            "servings": float(recipe.get("RecipeServings", 0)) if recipe.get("RecipeServings") else 0.0,
-            "calories": float(recipe.get("Calories", 0)) if recipe.get("Calories") else 0.0,
-            "protein": float(recipe.get("ProteinContent", 0)) if recipe.get("ProteinContent") else 0.0,
-            "carbs": float(recipe.get("CarbohydrateContent", 0)) if recipe.get("CarbohydrateContent") else 0.0,
-            "fat": float(recipe.get("FatContent", 0)) if recipe.get("FatContent") else 0.0,
-            "time": float(time_minutes) if time_minutes else 0.0,
+            "servings": servings,
+            "calories": get_nutrient("calories", "Calories"),
+            "protein": get_nutrient("protein", "ProteinContent"),
+            "carbs": get_nutrient("carbs", "CarbohydrateContent"),
+            "fat": get_nutrient("fat", "FatContent"),
+            "fiber": get_nutrient("fiber", "FiberContent"),
+            "sugar": get_nutrient("sugar", "SugarContent"),
+            "saturated_fat": get_nutrient("saturated_fat", "SaturatedFatContent"),
+            "cholesterol": get_nutrient("cholesterol", "CholesterolContent"),
+            "sodium": get_nutrient("sodium", "SodiumContent"),
             "source": "dataset",  # Default source for dataset recipes
             "source_type": "dataset",  # For filtering
         }
-    
+
     def add_recipes(self, recipes: List[Dict[str, Any]], batch_size: int = 100) -> int:
         """
         Add recipes to the vector store.
@@ -171,8 +199,8 @@ class RecipeVectorStore:
             for idx, recipe in enumerate(batch):
                 try:
                     # Use RecipeId if available, otherwise create unique ID from batch position
-                    recipe_id_raw = recipe.get("RecipeId")
-                    if recipe_id_raw is not None and recipe_id_raw != "":
+                    recipe_id_raw = recipe.get("id") or recipe.get("RecipeId")
+                    if recipe_id_raw is not None and str(recipe_id_raw) != "":
                         recipe_id = str(recipe_id_raw)
                     else:
                         # Generate unique ID based on global position
@@ -212,7 +240,9 @@ class RecipeVectorStore:
                     )
                     
                     added += len(documents)
-                    logger.info(f"Added batch {i//batch_size + 1}, total: {added} recipes")
+                    # Calculate current batch number correctly based on total processed so far
+                    current_batch_num = (i // batch_size) + 1
+                    logger.info(f"Added batch {current_batch_num}, total: {added} recipes")
                     
                 except Exception as e:
                     logger.error(f"Failed to add batch: {e}")
@@ -259,23 +289,23 @@ class RecipeVectorStore:
                     **results['metadatas'][0][i]
                 }
                 # Parse JSON fields back to lists
-                if 'keywords' in recipe:
-                    try:
-                        recipe['keywords'] = json.loads(recipe['keywords'])
-                    except:
-                        recipe['keywords'] = []
+                json_fields = ['keywords', 'ingredients', 'instructions', 'diet_labels', 'health_labels', 'dish_type', 'cuisine_type', 'meal_type']
+                for field in json_fields:
+                    if field in recipe:
+                        try:
+                            recipe[field] = json.loads(recipe[field]) if isinstance(recipe[field], str) else recipe[field]
+                        except:
+                            recipe[field] = []
                 
-                if 'ingredients' in recipe:
-                    try:
-                        recipe['ingredients'] = json.loads(recipe['ingredients'])
-                    except:
-                        recipe['ingredients'] = []
-                
-                if 'instructions' in recipe:
-                    try:
-                        recipe['instructions'] = json.loads(recipe['instructions'])
-                    except:
-                        recipe['instructions'] = []
+                # Combine all tags/labels into keywords for frontend compatibility
+                if not recipe.get('keywords'):
+                    all_tags = []
+                    all_tags.extend(recipe.get('diet_labels', []))
+                    all_tags.extend(recipe.get('health_labels', []))
+                    all_tags.extend(recipe.get('dish_type', []))
+                    all_tags.extend(recipe.get('cuisine_type', []))
+                    all_tags.extend(recipe.get('meal_type', []))
+                    recipe['keywords'] = all_tags
                 
                 recipes.append(recipe)
             
@@ -298,33 +328,6 @@ class RecipeVectorStore:
             metadata={"description": "Recipe embeddings for semantic search"}
         )
         logger.info("Vector store cleared")
-    
-    def get_unique_categories(self) -> List[str]:
-        """
-        Get all unique recipe categories from the vector store.
-        
-        Returns:
-            Sorted list of unique category names
-        """
-        try:
-            # Query all recipes to get their categories
-            results = self.collection.get(
-                include=['metadatas']
-            )
-            
-            # Extract unique categories
-            categories = set()
-            for metadata in results['metadatas']:
-                category = metadata.get('category', '')
-                if category and category.strip():
-                    categories.add(category)
-            
-            # Return sorted list
-            return sorted(list(categories))
-            
-        except Exception as e:
-            logger.error(f"Failed to get categories: {e}")
-            return []
     
     def get_unique_keywords(self) -> List[str]:
         """
@@ -388,12 +391,24 @@ class RecipeVectorStore:
                     "id": results['ids'][i],
                     **results['metadatas'][i]
                 }
-                # Parse keywords back to list
-                if 'keywords' in recipe:
-                    try:
-                        recipe['keywords'] = json.loads(recipe['keywords'])
-                    except:
-                        recipe['keywords'] = []
+                # Parse JSON fields back to lists
+                json_fields = ['keywords', 'ingredients', 'instructions', 'diet_labels', 'health_labels', 'dish_type', 'cuisine_type', 'meal_type']
+                for field in json_fields:
+                    if field in recipe:
+                        try:
+                            recipe[field] = json.loads(recipe[field]) if isinstance(recipe[field], str) else recipe[field]
+                        except:
+                            recipe[field] = []
+                
+                # Combine all tags/labels into keywords for frontend compatibility
+                if not recipe.get('keywords'):
+                    all_tags = []
+                    all_tags.extend(recipe.get('diet_labels', []))
+                    all_tags.extend(recipe.get('health_labels', []))
+                    all_tags.extend(recipe.get('dish_type', []))
+                    all_tags.extend(recipe.get('cuisine_type', []))
+                    all_tags.extend(recipe.get('meal_type', []))
+                    recipe['keywords'] = all_tags
                 
                 recipes.append(recipe)
             
@@ -489,12 +504,27 @@ class RecipeVectorStore:
                 "steps": steps if steps else [{"number": 1, "instruction": "Recipe instructions not available. Please visit the original source."}],
             }
             
-            # Parse keywords back to list
-            if 'keywords' in recipe:
-                try:
-                    recipe['keywords'] = json.loads(recipe['keywords'])
-                except:
-                    recipe['keywords'] = []
+            # Parse all JSON fields back to lists
+            json_fields = ['keywords', 'diet_labels', 'health_labels', 'dish_type', 'cuisine_type', 'meal_type']
+            for field in json_fields:
+                if field in recipe:
+                    try:
+                        recipe[field] = json.loads(recipe[field]) if isinstance(recipe[field], str) else recipe[field]
+                    except:
+                        recipe[field] = []
+            
+            # Combine all tags/labels into keywords for frontend compatibility
+            if not recipe.get('keywords'):
+                all_tags = []
+                all_tags.extend(recipe.get('diet_labels', []))
+                all_tags.extend(recipe.get('health_labels', []))
+                all_tags.extend(recipe.get('dish_type', []))
+                all_tags.extend(recipe.get('cuisine_type', []))
+                all_tags.extend(recipe.get('meal_type', []))
+                recipe['keywords'] = all_tags
+            
+            # Also populate 'tags' field for compatibility
+            recipe['tags'] = recipe.get('keywords', [])
             
             # Clean up - remove the JSON string versions if they exist
             recipe.pop('instructions', None)

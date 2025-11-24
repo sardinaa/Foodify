@@ -18,8 +18,8 @@ h2==4.1.0            # HTTP/2 support
 socksio==1.0.0       # SOCKS proxy support
 
 # Video transcript extraction (optional but recommended for social media)
-yt-dlp>=2024.1.0     # Download audio from videos (YouTube, TikTok, Instagram, etc.)
-faster-whisper>=1.0.0  # Fast local speech-to-text transcription
+# yt-dlp>=2024.1.0     # Download audio from videos (YouTube, TikTok, Instagram, etc.)
+# faster-whisper>=1.0.0  # Fast local speech-to-text transcription
 
 # RAG System for Recipe Recommendations
 datasets>=4.4.1      # Hugging Face datasets for loading recipe data
@@ -27,3 +27,5 @@ chromadb>=0.5.0      # Vector database for semantic search
 sentence-transformers>=3.0.0  # Embedding models for recipe similarity
 langchain>=0.3.0    # Framework for building RAG applications
 langchain-community>=0.3.0   # Community integrations for LangChain
+matplotlib>=3.8.0    # Plotting library for EDA
+seaborn>=0.13.0      # Statistical data visualization

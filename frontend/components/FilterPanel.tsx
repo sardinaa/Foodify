@@ -2,11 +2,10 @@
 
 import { useState, useEffect } from 'react';
 import { X, ChevronDown, ChevronUp } from 'lucide-react';
-import { getCategories, getKeywords } from '@/lib/apiClient';
+import { getKeywords } from '@/lib/apiClient';
 
 export interface FilterState {
   sourceType: 'all' | 'dataset' | 'mine';
-  categories: string[];
   keywords: string[];
   maxCalories: number;
   minProtein: number;
@@ -23,13 +22,10 @@ interface FilterPanelProps {
 }
 
 export default function FilterPanel({ isOpen, onClose, filters, onFiltersChange }: FilterPanelProps) {
-  const [allCategories, setAllCategories] = useState<string[]>([]);
   const [allKeywords, setAllKeywords] = useState<string[]>([]);
-  const [showAllCategories, setShowAllCategories] = useState(false);
   const [showAllKeywords, setShowAllKeywords] = useState(false);
   const [expandedSections, setExpandedSections] = useState({
     source: true,
-    categories: true,
     keywords: true,
     nutrition: false,
     other: false,
@@ -38,11 +34,7 @@ export default function FilterPanel({ isOpen, onClose, filters, onFiltersChange 
   useEffect(() => {
     const fetchFilterData = async () => {
       try {
-        const [categories, keywords] = await Promise.all([
-          getCategories(),
-          getKeywords(),
-        ]);
-        setAllCategories(categories);
+        const keywords = await getKeywords();
         setAllKeywords(keywords);
       } catch (error) {
         console.error('Failed to fetch filter data:', error);
@@ -60,13 +52,6 @@ export default function FilterPanel({ isOpen, onClose, filters, onFiltersChange 
     onFiltersChange({ ...filters, [key]: value });
   };
 
-  const toggleCategory = (category: string) => {
-    const newCategories = filters.categories.includes(category)
-      ? filters.categories.filter(c => c !== category)
-      : [...filters.categories, category];
-    updateFilter('categories', newCategories);
-  };
-
   const toggleKeyword = (keyword: string) => {
     const newKeywords = filters.keywords.includes(keyword)
       ? filters.keywords.filter(k => k !== keyword)
@@ -77,7 +62,6 @@ export default function FilterPanel({ isOpen, onClose, filters, onFiltersChange 
   const clearFilters = () => {
     onFiltersChange({
       sourceType: 'all',
-      categories: [],
       keywords: [],
       maxCalories: 2000,
       minProtein: 0,
@@ -88,7 +72,6 @@ export default function FilterPanel({ isOpen, onClose, filters, onFiltersChange 
 
   const hasActiveFilters = 
     filters.sourceType !== 'all' ||
-    filters.categories.length > 0 ||
     filters.keywords.length > 0 ||
     filters.maxCalories !== 2000 ||
     filters.minProtein !== 0 ||
@@ -176,7 +159,7 @@ export default function FilterPanel({ isOpen, onClose, filters, onFiltersChange 
                   />
                   <span className="text-sm text-gray-700">Dataset Recipes</span>
                   <span className="px-2 py-0.5 bg-blue-50 text-blue-700 rounded text-xs">
-                    {allCategories.length > 0 ? '109 categories' : ''}
+                    {allKeywords.length > 0 ? `${allKeywords.length} tags` : ''}
                   </span>
                 </label>
                 <label className="flex items-center gap-2 cursor-pointer">
@@ -188,45 +171,6 @@ export default function FilterPanel({ isOpen, onClose, filters, onFiltersChange 
                   />
                   <span className="text-sm text-gray-700">My Recipes</span>
                 </label>
-              </div>
-            )}
-          </div>
-
-          {/* Categories */}
-          <div>
-            <button
-              onClick={() => toggleSection('categories')}
-              className="flex items-center justify-between w-full mb-3"
-            >
-              <h3 className="font-semibold text-gray-900">Categories</h3>
-              {expandedSections.categories ? <ChevronUp size={16} /> : <ChevronDown size={16} />}
-            </button>
-            
-            {expandedSections.categories && (
-              <div>
-                <div className="flex flex-wrap gap-2 mb-2">
-                  {(showAllCategories ? allCategories : allCategories.slice(0, 20)).map(category => (
-                    <button
-                      key={category}
-                      onClick={() => toggleCategory(category)}
-                      className={`px-3 py-1 rounded-full text-xs font-medium transition-colors ${
-                        filters.categories.includes(category)
-                          ? 'bg-emerald-100 text-emerald-700 border border-emerald-300'
-                          : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
-                      }`}
-                    >
-                      {category}
-                    </button>
-                  ))}
-                </div>
-                {allCategories.length > 20 && (
-                  <button
-                    onClick={() => setShowAllCategories(!showAllCategories)}
-                    className="text-sm text-emerald-600 hover:text-emerald-700"
-                  >
-                    {showAllCategories ? 'Show Less' : `Show All ${allCategories.length} Categories`}
-                  </button>
-                )}
               </div>
             )}
           </div>

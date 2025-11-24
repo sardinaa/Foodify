@@ -65,10 +65,7 @@ export default function RecipeCard({
         </div>
 
         <div className="flex items-center gap-2 mb-3 flex-wrap">
-          <span className="px-2 py-1 bg-gray-100 text-gray-700 rounded text-xs">
-            {recipe.category}
-          </span>
-          {recipe.keywords.slice(0, 2).map((keyword) => (
+          {recipe.keywords.slice(0, 4).map((keyword) => (
             <span
               key={keyword}
               className="px-2 py-1 bg-gray-50 text-gray-600 rounded text-xs"
@@ -76,9 +73,9 @@ export default function RecipeCard({
               {keyword}
             </span>
           ))}
-          {recipe.keywords.length > 2 && (
+          {recipe.keywords.length > 4 && (
             <span className="px-2 py-1 bg-gray-50 text-gray-600 rounded text-xs">
-              +{recipe.keywords.length - 2}
+              +{recipe.keywords.length - 4}
             </span>
           )}
         </div>
@@ -102,16 +99,16 @@ export default function RecipeCard({
         </div>
 
         {/* Macros */}
-        <div className="flex items-center gap-3 text-xs text-gray-600 mb-4 pb-4 border-b border-gray-100">
-          <div>
-            <span className="font-medium">P:</span> {Math.round(recipe.protein)}g
-          </div>
-          <div>
-            <span className="font-medium">C:</span> {Math.round(recipe.carbs)}g
-          </div>
-          <div>
-            <span className="font-medium">F:</span> {Math.round(recipe.fat)}g
-          </div>
+        <div className="flex items-center gap-2 mb-4 pb-4 border-b border-gray-100">
+          <span className="px-2 py-1 bg-blue-50 text-blue-700 rounded text-xs font-medium">
+            P {Math.round(recipe.protein)}g
+          </span>
+          <span className="px-2 py-1 bg-orange-50 text-orange-700 rounded text-xs font-medium">
+            C {Math.round(recipe.carbs)}g
+          </span>
+          <span className="px-2 py-1 bg-purple-50 text-purple-700 rounded text-xs font-medium">
+            F {Math.round(recipe.fat)}g
+          </span>
         </div>
 
         {/* Action Buttons */}

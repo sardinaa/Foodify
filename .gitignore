@@ -44,6 +44,8 @@ Thumbs.db
 *.db
 *.sqlite
 *.sqlite3
+*.bin
+*.pickle
 
 # Node
 node_modules/
@@ -67,9 +69,3 @@ htmlcov/
 # Application specific
 uploads/
 temp/
-
-# Data files (keep only nutrition_data.csv and nutrition_eda.ipynb)
-data/FOOD-DATA-GROUP*.csv
-data/DATASET/
-data/METADATA/
-data/test_nutrition_lookup.py

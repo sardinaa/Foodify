@@ -30,7 +30,6 @@
   "recipe_context_item": {
     "template": [
       "{index}. {name}",
-      "   Category: {category}",
       "   Calories: {calories} per serving",
       "   Protein: {protein}g, Carbs: {carbs}g, Fat: {fat}g",
       "   Servings: {servings}",

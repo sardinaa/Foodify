@@ -1,13 +1,13 @@
 """
 CRUD operations for recipes.
 """
-from typing import List, Optional
+from typing import Optional
 from sqlalchemy.orm import Session
 from app.db.models import (
     RecipeModel, RecipeIngredientModel, RecipeStepModel,
     NutritionSummaryModel, RecipeTagModel
 )
-from app.db.schema import RecipeCreate, IngredientBase, RecipeStepBase, NutritionBase
+from app.db.schema import RecipeCreate, NutritionBase
 
 
 def create_recipe(
@@ -24,7 +24,6 @@ def create_recipe(
         name=recipe_data.name,
         description=recipe_data.description,
         servings=recipe_data.servings,
-        total_time_minutes=recipe_data.total_time_minutes,
         source_type=recipe_data.source_type,
         source_ref=recipe_data.source_ref
     )
@@ -80,31 +79,3 @@ def create_recipe(
 def get_recipe(db: Session, recipe_id: int) -> Optional[RecipeModel]:
     """Get a recipe by ID."""
     return db.query(RecipeModel).filter(RecipeModel.id == recipe_id).first()
-
-
-def get_recipes(db: Session, skip: int = 0, limit: int = 100) -> List[RecipeModel]:
-    """Get all recipes with pagination."""
-    return db.query(RecipeModel).offset(skip).limit(limit).all()
-
-
-def get_recipes_by_tag(db: Session, tag: str) -> List[RecipeModel]:
-    """Get recipes with a specific tag."""
-    return (
-        db.query(RecipeModel)
-        .join(RecipeTagModel)
-        .filter(RecipeTagModel.tag == tag)
-        .all()
-    )
-
-
-def search_recipes(db: Session, query: str) -> List[RecipeModel]:
-    """Search recipes by name or description."""
-    search_pattern = f"%{query}%"
-    return (
-        db.query(RecipeModel)
-        .filter(
-            (RecipeModel.name.ilike(search_pattern)) |
-            (RecipeModel.description.ilike(search_pattern))
-        )
-        .all()
-    )

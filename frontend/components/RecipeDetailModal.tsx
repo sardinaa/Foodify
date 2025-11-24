@@ -15,6 +15,11 @@ interface RecipeDetailProps {
   protein: number;
   carbs: number;
   fat: number;
+  fiber?: number;
+  sugar?: number;
+  saturated_fat?: number;
+  cholesterol?: number;
+  sodium?: number;
   prepTime?: number;
   cookTime?: number;
   totalTime?: number;
@@ -257,31 +262,73 @@ export default function RecipeDetailModal({
               </button>
 
               {nutritionExpanded && (
-                <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-                  <div className="p-4 bg-orange-50 rounded-lg">
-                    <div className="text-sm text-orange-700 mb-1">Calories</div>
-                    <div className="text-2xl font-bold text-orange-900">
-                      {recipe.calories ? Math.round(recipe.calories) : 'N/A'}
+                <div className="space-y-4">
+                  {/* Primary Macros */}
+                  <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                    <div className="p-4 bg-orange-50 rounded-lg">
+                      <div className="text-sm text-orange-700 mb-1">Calories</div>
+                      <div className="text-2xl font-bold text-orange-900">
+                        {recipe.calories ? Math.round(recipe.calories) : 'N/A'}
+                      </div>
+                    </div>
+                    <div className="p-4 bg-blue-50 rounded-lg">
+                      <div className="text-sm text-blue-700 mb-1">Protein</div>
+                      <div className="text-2xl font-bold text-blue-900">
+                        {recipe.protein ? `${Math.round(recipe.protein)}g` : 'N/A'}
+                      </div>
+                    </div>
+                    <div className="p-4 bg-amber-50 rounded-lg">
+                      <div className="text-sm text-amber-700 mb-1">Carbs</div>
+                      <div className="text-2xl font-bold text-amber-900">
+                        {recipe.carbs ? `${Math.round(recipe.carbs)}g` : 'N/A'}
+                      </div>
+                    </div>
+                    <div className="p-4 bg-purple-50 rounded-lg">
+                      <div className="text-sm text-purple-700 mb-1">Fat</div>
+                      <div className="text-2xl font-bold text-purple-900">
+                        {recipe.fat ? `${Math.round(recipe.fat)}g` : 'N/A'}
+                      </div>
                     </div>
                   </div>
-                  <div className="p-4 bg-blue-50 rounded-lg">
-                    <div className="text-sm text-blue-700 mb-1">Protein</div>
-                    <div className="text-2xl font-bold text-blue-900">
-                      {recipe.protein ? `${Math.round(recipe.protein)}g` : 'N/A'}
+
+                  {/* Additional Nutrition Details */}
+                  {(recipe.fiber || recipe.sugar || recipe.saturated_fat || recipe.cholesterol || recipe.sodium) && (
+                    <div className="border-t border-gray-200 pt-4">
+                      <div className="text-sm font-semibold text-gray-700 mb-3">Detailed Nutrition</div>
+                      <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
+                        {recipe.fiber !== undefined && recipe.fiber > 0 && (
+                          <div className="flex justify-between items-center p-2 bg-gray-50 rounded">
+                            <span className="text-sm text-gray-600">Fiber</span>
+                            <span className="text-sm font-semibold text-gray-900">{Math.round(recipe.fiber)}g</span>
+                          </div>
+                        )}
+                        {recipe.sugar !== undefined && recipe.sugar > 0 && (
+                          <div className="flex justify-between items-center p-2 bg-gray-50 rounded">
+                            <span className="text-sm text-gray-600">Sugar</span>
+                            <span className="text-sm font-semibold text-gray-900">{Math.round(recipe.sugar)}g</span>
+                          </div>
+                        )}
+                        {recipe.saturated_fat !== undefined && recipe.saturated_fat > 0 && (
+                          <div className="flex justify-between items-center p-2 bg-gray-50 rounded">
+                            <span className="text-sm text-gray-600">Saturated Fat</span>
+                            <span className="text-sm font-semibold text-gray-900">{Math.round(recipe.saturated_fat)}g</span>
+                          </div>
+                        )}
+                        {recipe.cholesterol !== undefined && recipe.cholesterol > 0 && (
+                          <div className="flex justify-between items-center p-2 bg-gray-50 rounded">
+                            <span className="text-sm text-gray-600">Cholesterol</span>
+                            <span className="text-sm font-semibold text-gray-900">{Math.round(recipe.cholesterol)}mg</span>
+                          </div>
+                        )}
+                        {recipe.sodium !== undefined && recipe.sodium > 0 && (
+                          <div className="flex justify-between items-center p-2 bg-gray-50 rounded">
+                            <span className="text-sm text-gray-600">Sodium</span>
+                            <span className="text-sm font-semibold text-gray-900">{Math.round(recipe.sodium)}mg</span>
+                          </div>
+                        )}
+                      </div>
                     </div>
-                  </div>
-                  <div className="p-4 bg-amber-50 rounded-lg">
-                    <div className="text-sm text-amber-700 mb-1">Carbs</div>
-                    <div className="text-2xl font-bold text-amber-900">
-                      {recipe.carbs ? `${Math.round(recipe.carbs)}g` : 'N/A'}
-                    </div>
-                  </div>
-                  <div className="p-4 bg-purple-50 rounded-lg">
-                    <div className="text-sm text-purple-700 mb-1">Fat</div>
-                    <div className="text-2xl font-bold text-purple-900">
-                      {recipe.fat ? `${Math.round(recipe.fat)}g` : 'N/A'}
-                    </div>
-                  </div>
+                  )}
                 </div>
               )}
             </div>
@@ -320,7 +367,7 @@ export default function RecipeDetailModal({
                 className={`flex items-center gap-2 px-4 py-2 rounded-lg transition-colors ${
                   isFavorited
                     ? 'bg-red-50 text-red-600 hover:bg-red-100'
-                    : 'border border-gray-300 hover:bg-gray-50'
+                    : 'border border-gray-300 hover:bg-gray-50 text-gray-800'
                 }`}
               >
                 <Heart size={18} fill={isFavorited ? 'currentColor' : 'none'} />
@@ -330,7 +377,7 @@ export default function RecipeDetailModal({
             {onShare && (
               <button
                 onClick={onShare}
-                className="flex items-center gap-2 px-4 py-2 border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors"
+                className="flex items-center gap-2 px-4 py-2 border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors text-gray-800"
               >
                 <Share2 size={18} />
                 <span className="hidden sm:inline">Share</span>
@@ -338,7 +385,7 @@ export default function RecipeDetailModal({
             )}
             <button
               onClick={() => window.print()}
-              className="flex items-center gap-2 px-4 py-2 border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors"
+              className="flex items-center gap-2 px-4 py-2 border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors text-gray-800"
             >
               <Printer size={18} />
               <span className="hidden sm:inline">Print</span>

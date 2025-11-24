@@ -4,10 +4,10 @@ Handles various formats and edge cases in AI-generated JSON.
 """
 import json
 import re
-from typing import Dict, Any, Optional
-import logging
+from typing import Dict, Any, Optional, List, Union
+from app.core.logging import get_logger
 
-logger = logging.getLogger(__name__)
+logger = get_logger("utils.json_parser")
 
 
 def extract_json_from_llm_response(
@@ -108,56 +108,56 @@ def _extract_markdown_json(response: str) -> Optional[Dict[str, Any]]:
     match = re.search(pattern, response, re.DOTALL)
     if match:
         content = match.group(1).strip()
-        print(f"[JSON Parser] Extracted from ```json block, length: {len(content)}")
-        print(f"[JSON Parser] First 200 chars: {content[:200]}")
+        logger.debug(f"[JSON Parser] Extracted from ```json block, length: {len(content)}")
+        logger.debug(f"[JSON Parser] First 200 chars: {content[:200]}")
         try:
             result = json.loads(content)
-            print(f"[JSON Parser] Successfully parsed JSON from ```json block")
+            logger.debug(f"[JSON Parser] Successfully parsed JSON from ```json block")
             return result
         except json.JSONDecodeError as e:
-            print(f"[JSON Parser] JSON parse failed: {e}, trying fix...")
-            print(f"[JSON Parser] Error context: {content[max(0, e.pos-50):min(len(content), e.pos+50)]}")
+            logger.warning(f"[JSON Parser] JSON parse failed: {e}, trying fix...")
+            logger.debug(f"[JSON Parser] Error context: {content[max(0, e.pos-50):min(len(content), e.pos+50)]}")
             # Try fixing common errors
             try:
                 fixed = _fix_common_json_errors(content)
                 result = json.loads(fixed)
-                print(f"[JSON Parser] Successfully parsed after fix")
+                logger.info(f"[JSON Parser] Successfully parsed after fix")
                 return result
             except json.JSONDecodeError as fix_e:
-                print(f"[JSON Parser] Fix also failed: {fix_e}")
-                print(f"[JSON Parser] Error context after fix: {fixed[max(0, fix_e.pos-50):min(len(fixed), fix_e.pos+50)]}")
+                logger.error(f"[JSON Parser] Fix also failed: {fix_e}")
+                logger.debug(f"[JSON Parser] Error context after fix: {fixed[max(0, fix_e.pos-50):min(len(fixed), fix_e.pos+50)]}")
     else:
-        print(f"[JSON Parser] No match for ```json pattern in response (length: {len(response)})")
+        logger.debug(f"[JSON Parser] No match for ```json pattern in response (length: {len(response)})")
     
     # Try generic ``` format with optional newline
     pattern = r'```\s*(.*?)```'
     match = re.search(pattern, response, re.DOTALL)
     if match:
         content = match.group(1).strip()
-        print(f"[JSON Parser] Extracted from ``` block, length: {len(content)}")
+        logger.debug(f"[JSON Parser] Extracted from ``` block, length: {len(content)}")
         # Check if it's JSON
         if content.startswith('{'):
-            print(f"[JSON Parser] Content starts with '{{', attempting parse...")
+            logger.debug(f"[JSON Parser] Content starts with '{{', attempting parse...")
             try:
                 result = json.loads(content)
-                print(f"[JSON Parser] Successfully parsed JSON from ``` block")
+                logger.debug(f"[JSON Parser] Successfully parsed JSON from ``` block")
                 return result
             except json.JSONDecodeError as e:
-                print(f"[JSON Parser] JSON parse failed: {e}, trying fix...")
-                print(f"[JSON Parser] Error context: {content[max(0, e.pos-50):min(len(content), e.pos+50)]}")
+                logger.warning(f"[JSON Parser] JSON parse failed: {e}, trying fix...")
+                logger.debug(f"[JSON Parser] Error context: {content[max(0, e.pos-50):min(len(content), e.pos+50)]}")
                 # Try fixing common errors
                 try:
                     fixed = _fix_common_json_errors(content)
                     result = json.loads(fixed)
-                    print(f"[JSON Parser] Successfully parsed after fix")
+                    logger.info(f"[JSON Parser] Successfully parsed after fix")
                     return result
                 except json.JSONDecodeError as fix_e:
-                    print(f"[JSON Parser] Fix also failed: {fix_e}")
-                    print(f"[JSON Parser] Error context after fix: {fixed[max(0, fix_e.pos-50):min(len(fixed), fix_e.pos+50)]}")
+                    logger.error(f"[JSON Parser] Fix also failed: {fix_e}")
+                    logger.debug(f"[JSON Parser] Error context after fix: {fixed[max(0, fix_e.pos-50):min(len(fixed), fix_e.pos+50)]}")
         else:
-            print(f"[JSON Parser] Content doesn't start with {{ (starts with: {content[:50]})")
+            logger.debug(f"[JSON Parser] Content doesn't start with {{ (starts with: {content[:50]})")
     else:
-        print(f"[JSON Parser] No match for ``` pattern")
+        logger.debug(f"[JSON Parser] No match for ``` pattern")
     
     return None
 
@@ -230,11 +230,16 @@ def _fix_common_json_errors(json_str: str) -> str:
     Fix common JSON errors that LLMs make.
     
     Common issues:
+    - Double braces {{...}}
     - Range values like "2-3" instead of numbers
     - Trailing commas
     - Unquoted keys
     """
     original_len = len(json_str)
+    
+    # Fix double braces {{...}} -> {...}
+    if json_str.startswith('{{') and json_str.endswith('}}'):
+        json_str = json_str[1:-1]
     
     # Fix range values like "2-3" -> "2" (take first number)
     # This handles cases like "quantity": 2-3
@@ -256,7 +261,7 @@ def _fix_common_json_errors(json_str: str) -> str:
     json_str = re.sub(r',(\s*[}\]])', r'\1', json_str)
     
     if len(json_str) != original_len:
-        print(f"🔧 Fixed JSON errors: {original_len} -> {len(json_str)} chars")
+        logger.debug(f"Fixed JSON errors: {original_len} -> {len(json_str)} chars")
     
     return json_str
 
