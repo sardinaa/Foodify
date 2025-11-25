@@ -16,11 +16,15 @@ from app.core.constants import MenuConstants, LimitsConstants
 from app.utils.json_parser import parse_llm_json, safe_json_parse
 from app.core.logging import get_logger
 from app.services.recipe_vectorstore import get_vector_store
-from app.core.llm_client import get_llm_client
 from app.core.config import get_settings
 from app.utils.prompt_loader import get_prompt_loader
 from app.db.crud_recipes import get_recipe
 from app.db.schema import Recipe
+
+# LangChain imports
+from langchain_ollama import ChatOllama
+from langchain_core.prompts import PromptTemplate
+from langchain_core.output_parsers import StrOutputParser
 
 logger = get_logger("chat_agent")
 
@@ -30,7 +34,11 @@ _vector_store = get_vector_store(
     persist_directory=_settings.vector_store_path,
     embedding_model=_settings.embedding_model
 )
-_llm_client = get_llm_client()
+_llm = ChatOllama(
+    base_url=_settings.llm_base_url,
+    model=_settings.llm_model,
+    temperature=0.1
+)
 _prompt_loader = get_prompt_loader()
 
 
@@ -130,20 +138,11 @@ def _metadata_to_dict(metadata: Dict[str, Any]) -> Dict[str, Any]:
 async def _extract_constraints(user_query: str) -> Dict[str, Any]:
     """Extract constraints from user query using LLM."""
     try:
-        config = _prompt_loader.get_llm_prompt("recipe_constraint_parser")
-        system_prompt = "\n".join(config.get("system", []))
-        user_template = "\n".join(config.get("user_template", []))
+        prompt = _prompt_loader.get_prompt_template("recipe_constraint_parser", type="llm")
         
-        prompt = _prompt_loader.format_prompt(
-            user_template,
-            user_query=user_query
-        )
+        chain = prompt | _llm | StrOutputParser()
         
-        response = await _llm_client.chat(
-            messages=[{"role": "user", "content": prompt}],
-            temperature=0.1,
-            system=system_prompt
-        )
+        response = await chain.ainvoke({"user_query": user_query})
         
         return parse_llm_json(response, fallback={
             "dietary": [],
@@ -249,20 +248,33 @@ async def _generate_simple_explanation(
     constraint_text = f" ({'; '.join(constraint_parts)})" if constraint_parts else ""
     
     # Simple prompt
-    prompt = f"""User asked: "{user_query}"{constraint_text}
+    prompt_template = """User asked: "{user_query}"{constraint_text}
 
 Found recipes:
-{chr(10).join(recipe_summaries)}
+{recipe_summaries}
 
-{f'Note: {system_instruction}' if system_instruction else ''}
+{system_instruction_text}
 
 Provide a friendly 2-3 sentence recommendation explaining why these recipes match and which might be best."""
     
     try:
-        return await _llm_client.chat(
-            messages=[{"role": "user", "content": prompt}],
+        prompt = PromptTemplate.from_template(prompt_template)
+        
+        # Use a slightly higher temperature for explanations
+        explanation_llm = ChatOllama(
+            base_url=_settings.llm_base_url,
+            model=_settings.llm_model,
             temperature=0.7
         )
+        
+        chain = prompt | explanation_llm | StrOutputParser()
+        
+        return await chain.ainvoke({
+            "user_query": user_query,
+            "constraint_text": constraint_text,
+            "recipe_summaries": chr(10).join(recipe_summaries),
+            "system_instruction_text": f'Note: {system_instruction}' if system_instruction else ''
+        })
     except Exception as e:
         logger.error(f"LLM explanation failed: {e}")
         return f"I found {len(recipes)} great recipes for you! Check out the details below."
@@ -464,22 +476,22 @@ async def handle_modification_mode(
     
     if action in ["show_recipe", "answer_question", "show_previous"]:
         # Use LLM to generate a specific answer based on the recipe
-        qa_config = _prompt_loader.get_llm_prompt("recipe_qa")
-        system_prompt = "\n".join(qa_config.get("system", []))
-        user_template = "\n".join(qa_config.get("user_template", []))
+        prompt = _prompt_loader.get_prompt_template("recipe_qa", type="llm")
         
-        qa_prompt = _prompt_loader.format_prompt(
-            user_template,
-            recipe_context=json.dumps(previous_recipes[0], indent=2),
-            user_message=message
+        # Use slightly higher temperature for QA
+        qa_llm = ChatOllama(
+            base_url=_settings.llm_base_url,
+            model=_settings.llm_model,
+            temperature=0.3
         )
         
+        chain = prompt | qa_llm | StrOutputParser()
+        
         try:
-            qa_response = await _llm_client.chat(
-                messages=[{"role": "user", "content": qa_prompt}],
-                temperature=0.3,
-                system=system_prompt
-            )
+            qa_response = await chain.ainvoke({
+                "recipe_context": json.dumps(previous_recipes[0], indent=2),
+                "user_message": message
+            })
             reply_text = qa_response
         except Exception as e:
             logger.error(f"QA generation failed: {e}")
@@ -498,22 +510,22 @@ async def handle_modification_mode(
         }
     
     # Modify recipe using LLM with prompt template
-    modification_config = _prompt_loader.get_llm_prompt("recipe_modification")
-    system_prompt = "\n".join(modification_config.get("system", []))
-    user_template = "\n".join(modification_config.get("user_template", []))
+    prompt = _prompt_loader.get_prompt_template("recipe_modification", type="llm")
     
-    user_prompt = _prompt_loader.format_prompt(
-        user_template,
-        original_recipe=json.dumps(previous_recipes[0], indent=2),
-        user_request=message
+    # Use slightly higher temperature for modification
+    mod_llm = ChatOllama(
+        base_url=_settings.llm_base_url,
+        model=_settings.llm_model,
+        temperature=0.3
     )
     
+    chain = prompt | mod_llm | StrOutputParser()
+    
     try:
-        response = await _llm_client.chat(
-            messages=[{"role": "user", "content": user_prompt}],
-            temperature=0.3,
-            system=system_prompt
-        )
+        response = await chain.ainvoke({
+            "original_recipe": json.dumps(previous_recipes[0], indent=2),
+            "user_request": message
+        })
         
         # Parse JSON using robust parser
         result = parse_llm_json(response)
@@ -564,21 +576,14 @@ async def handle_weekly_menu_mode(
             history_context = "\n".join(history_lines)
 
         # Parse constraints using LLM with prompt template
-        constraint_config = _prompt_loader.get_llm_prompt("menu_constraint_parser")
-        system_prompt = "\n".join(constraint_config.get("system", []))
-        user_template = "\n".join(constraint_config.get("user_template", []))
+        prompt = _prompt_loader.get_prompt_template("menu_constraint_parser", type="llm")
         
-        parse_prompt = _prompt_loader.format_prompt(
-            user_template,
-            conversation_history=history_context,
-            user_message=message
-        )
+        chain = prompt | _llm | StrOutputParser()
         
-        llm_response = await _llm_client.chat(
-            messages=[{"role": "user", "content": parse_prompt}],
-            temperature=0.1,
-            system=system_prompt
-        )
+        llm_response = await chain.ainvoke({
+            "conversation_history": history_context,
+            "user_message": message
+        })
         
         # Parse response using robust JSON parser
         fallback_constraints = {

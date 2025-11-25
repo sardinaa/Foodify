@@ -68,10 +68,10 @@
       "- If user says 'change Friday dinner' -> action is 'modify_menu'.",
       "",
       "Examples:",
-      "User: 'Give me more' -> {\"action\": \"new_request\", \"referenced_items\": []}",
-      "User: 'Show me the recipe' -> {\"action\": \"show_recipe\", \"referenced_items\": [{\"type\": \"recipe\", \"name\": \"...\", \"context\": \"...\"}]}",
-      "User: 'How do I make the dough?' -> {\"action\": \"answer_question\", \"referenced_items\": [{\"type\": \"recipe\", \"name\": \"...\", \"context\": \"...\"}]}",
-      "User: 'Make it vegan' -> {\"action\": \"modify_previous\", \"referenced_items\": [{\"type\": \"recipe\", \"name\": \"...\", \"context\": \"...\"}]}"
+      "User: 'Give me more' -> {{\"action\": \"new_request\", \"referenced_items\": []}}",
+      "User: 'Show me the recipe' -> {{\"action\": \"show_recipe\", \"referenced_items\": [{{\"type\": \"recipe\", \"name\": \"...\", \"context\": \"...\"}}]}}",
+      "User: 'How do I make the dough?' -> {{\"action\": \"answer_question\", \"referenced_items\": [{{\"type\": \"recipe\", \"name\": \"...\", \"context\": \"...\"}}]}}",
+      "User: 'Make it vegan' -> {{\"action\": \"modify_previous\", \"referenced_items\": [{{\"type\": \"recipe\", \"name\": \"...\", \"context\": \"...\"}}]}}"
     ],
     "user_template": [
       "Conversation history:",
@@ -234,7 +234,7 @@
     "system": [
       "Parse menu modification requests. Extract which day, meal, and what type of recipe to replace it with.",
       "Return ONLY valid JSON:",
-      "{\"day\": \"DayName\", \"meal\": \"breakfast|lunch|dinner\", \"replacement_query\": \"specific search query\"}",
+      "{{\"day\": \"DayName\", \"meal\": \"breakfast|lunch|dinner\", \"replacement_query\": \"specific search query\"}}",
       "",
       "Rules:",
       "- day: Extract the specific day mentioned (Monday, Tuesday, etc.)",
@@ -242,10 +242,10 @@
       "- replacement_query: Extract the FULL requirement/description from user's message - be specific and include all context",
       "",
       "Examples:",
-      "\"Change the breakfast from Saturday for pancakes\" → {\"day\":\"Saturday\",\"meal\":\"breakfast\",\"replacement_query\":\"pancakes breakfast\"}",
-      "\"Replace Sunday lunch for a high protein dish\" → {\"day\":\"Sunday\",\"meal\":\"lunch\",\"replacement_query\":\"high protein lunch\"}",
-      "\"Change Friday dinner to something vegetarian\" → {\"day\":\"Friday\",\"meal\":\"dinner\",\"replacement_query\":\"vegetarian dinner\"}",
-      "\"Swap Wednesday lunch with a salad\" → {\"day\":\"Wednesday\",\"meal\":\"lunch\",\"replacement_query\":\"salad lunch\"}"
+      "\"Change the breakfast from Saturday for pancakes\" → {{\"day\":\"Saturday\",\"meal\":\"breakfast\",\"replacement_query\":\"pancakes breakfast\"}}",
+      "\"Replace Sunday lunch for a high protein dish\" → {{\"day\":\"Sunday\",\"meal\":\"lunch\",\"replacement_query\":\"high protein lunch\"}}",
+      "\"Change Friday dinner to something vegetarian\" → {{\"day\":\"Friday\",\"meal\":\"dinner\",\"replacement_query\":\"vegetarian dinner\"}}",
+      "\"Swap Wednesday lunch with a salad\" → {{\"day\":\"Wednesday\",\"meal\":\"lunch\",\"replacement_query\":\"salad lunch\"}}"
     ],
     "user_template": [
       "User modification request: \"{user_message}\"",

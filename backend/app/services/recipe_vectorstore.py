@@ -1,21 +1,19 @@
 """
 Vector store service for recipe embeddings and semantic search.
-Uses ChromaDB for vector storage and sentence-transformers for embeddings.
+Uses LangChain with ChromaDB for vector storage and HuggingFace for embeddings.
 """
-import chromadb
-from chromadb.config import Settings
-from sentence_transformers import SentenceTransformer
+from langchain_chroma import Chroma
+from langchain_huggingface import HuggingFaceEmbeddings
 from typing import List, Dict, Any, Optional
 import logging
 import json
-import re
 from functools import lru_cache
 
 logger = logging.getLogger(__name__)
 
 
 class RecipeVectorStore:
-    """Manages recipe embeddings and vector-based similarity search."""
+    """Manages recipe embeddings and vector-based similarity search using LangChain."""
     
     def __init__(self, persist_directory: str, embedding_model: str):
         """
@@ -28,21 +26,21 @@ class RecipeVectorStore:
         self.persist_directory = persist_directory
         self.embedding_model_name = embedding_model
         
-        # Initialize ChromaDB client
-        self.client = chromadb.PersistentClient(
-            path=persist_directory,
-            settings=Settings(anonymized_telemetry=False)
-        )
-        
-        # Load embedding model
+        # Initialize Embedding Model
         logger.info(f"Loading embedding model: {embedding_model}")
-        self.embedding_model = SentenceTransformer(embedding_model)
+        self.embedding_function = HuggingFaceEmbeddings(model_name=embedding_model)
         
-        # Get or create collection
-        self.collection = self.client.get_or_create_collection(
-            name="recipes",
-            metadata={"description": "Recipe embeddings for semantic search"}
+        # Initialize ChromaDB via LangChain
+        self.vectorstore = Chroma(
+            collection_name="recipes",
+            embedding_function=self.embedding_function,
+            persist_directory=persist_directory,
+            collection_metadata={"description": "Recipe embeddings for semantic search"}
         )
+        
+        # Access underlying client for direct operations if needed
+        self.client = self.vectorstore._client
+        self.collection = self.vectorstore._collection
         
         logger.info(f"Vector store initialized with {self.collection.count()} recipes")
     
@@ -224,17 +222,9 @@ class RecipeVectorStore:
             # Add batch to collection
             if documents:
                 try:
-                    # Generate embeddings
-                    embeddings = self.embedding_model.encode(
-                        documents,
-                        show_progress_bar=False,
-                        convert_to_numpy=True
-                    ).tolist()
-                    
-                    # Add to ChromaDB
-                    self.collection.add(
-                        embeddings=embeddings,
-                        documents=documents,
+                    # Add to ChromaDB via LangChain
+                    self.vectorstore.add_texts(
+                        texts=documents,
                         metadatas=metadatas,
                         ids=ids
                     )
@@ -267,26 +257,21 @@ class RecipeVectorStore:
             List of recipe metadata with similarity scores
         """
         try:
-            # Generate query embedding
-            query_embedding = self.embedding_model.encode(
-                query,
-                convert_to_numpy=True
-            ).tolist()
-            
-            # Search ChromaDB
-            results = self.collection.query(
-                query_embeddings=[query_embedding],
-                n_results=n_results,
-                where=filter_dict
+            # Search ChromaDB via LangChain
+            # similarity_search_with_score returns List[Tuple[Document, float]]
+            results = self.vectorstore.similarity_search_with_score(
+                query=query,
+                k=n_results,
+                filter=filter_dict
             )
             
             # Format results
             recipes = []
-            for i in range(len(results['ids'][0])):
+            for doc, score in results:
                 recipe = {
-                    "id": results['ids'][0][i],
-                    "distance": results['distances'][0][i] if 'distances' in results else None,
-                    **results['metadatas'][0][i]
+                    "id": doc.metadata.get("recipe_id"),
+                    "distance": score,
+                    **doc.metadata
                 }
                 # Parse JSON fields back to lists
                 json_fields = ['keywords', 'ingredients', 'instructions', 'diet_labels', 'health_labels', 'dish_type', 'cuisine_type', 'meal_type']
@@ -322,11 +307,16 @@ class RecipeVectorStore:
     def clear(self):
         """Clear all recipes from the vector store."""
         # Delete and recreate collection
-        self.client.delete_collection("recipes")
-        self.collection = self.client.get_or_create_collection(
-            name="recipes",
-            metadata={"description": "Recipe embeddings for semantic search"}
+        self.vectorstore.delete_collection()
+        # Re-initialize
+        self.vectorstore = Chroma(
+            collection_name="recipes",
+            embedding_function=self.embedding_function,
+            persist_directory=self.persist_directory,
+            collection_metadata={"description": "Recipe embeddings for semantic search"}
         )
+        self.client = self.vectorstore._client
+        self.collection = self.vectorstore._collection
         logger.info("Vector store cleared")
     
     def get_unique_keywords(self) -> List[str]:

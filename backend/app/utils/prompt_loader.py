@@ -4,8 +4,9 @@ Centralized prompt management for easier maintenance and updates.
 """
 import json
 from pathlib import Path
-from typing import Dict, Any, Optional
+from typing import Dict, Any, Optional, Union, List
 import logging
+from langchain_core.prompts import PromptTemplate
 
 logger = logging.getLogger(__name__)
 
@@ -88,35 +89,51 @@ class PromptLoader:
         prompts = self._load_prompt_file("rag_prompts")
         return prompts.get(prompt_key, {})
     
-    def format_prompt(self, template: Any, **kwargs) -> str:
+    def get_prompt_template(self, prompt_key: str, type: str = "llm") -> PromptTemplate:
         """
-        Format a prompt template with provided variables.
-
-        Supports both a single string template or a list of string lines. If a list
-        is provided it will be joined with newlines before formatting.
-
+        Get a LangChain PromptTemplate object for the given key.
+        
         Args:
-            template: Prompt template (str or list of str) with placeholders
-            **kwargs: Variables to substitute in the template
-
+            prompt_key: Key identifying the prompt
+            type: Type of prompt file to look in ("llm", "rag", "vlm")
+            
         Returns:
-            Formatted prompt string
+            LangChain PromptTemplate object
         """
-        try:
-            # If the template is a list of lines, join them with newlines first
+        if type == "llm":
+            config = self.get_llm_prompt(prompt_key)
+        elif type == "rag":
+            config = self.get_rag_prompt(prompt_key)
+        elif type == "vlm":
+            config = self.get_vlm_prompt(prompt_key)
+        else:
+            config = {}
+            
+        if not config:
+            logger.warning(f"Prompt key '{prompt_key}' not found in {type} prompts")
+            return PromptTemplate.from_template("")
+            
+        # Handle "system" + "user_template" pattern
+        if "system" in config and "user_template" in config:
+            system_prompt = config["system"]
+            if isinstance(system_prompt, list):
+                system_prompt = "\n".join(system_prompt)
+                
+            user_template = config["user_template"]
+            if isinstance(user_template, list):
+                user_template = "\n".join(user_template)
+                
+            return PromptTemplate.from_template(f"{system_prompt}\n\n{user_template}")
+            
+        # Handle "template" pattern
+        elif "template" in config:
+            template = config["template"]
             if isinstance(template, list):
-                template_str = "\n".join(template)
-            else:
-                template_str = str(template or "")
-
-            return template_str.format(**kwargs)
-        except KeyError as e:
-            logger.error(f"Missing variable in prompt template: {e}")
-            # Return best-effort joined template
-            return template_str
-        except Exception as e:
-            logger.error(f"Error formatting prompt: {e}")
-            return template_str
+                template = "\n".join(template)
+            return PromptTemplate.from_template(template)
+            
+        # Fallback
+        return PromptTemplate.from_template("")
     
     def clear_cache(self):
         """Clear the prompt cache to reload from files."""

@@ -5,7 +5,10 @@ from __future__ import annotations
 import json
 from typing import Dict, Optional
 
-from app.core.llm_client import get_llm_client
+from langchain_ollama import ChatOllama
+from langchain_core.prompts import PromptTemplate
+from langchain_core.output_parsers import StrOutputParser
+from app.core.config import get_settings
 from app.services.conversation_memory import ConversationMemory
 from app.utils.prompt_loader import get_prompt_loader
 from app.core.logging import get_logger
@@ -18,7 +21,6 @@ async def analyze_conversation_context(
     memory: Optional[ConversationMemory] = None,
 ) -> Dict:
     """Use LLM to analyze conversation context and referenced items."""
-    llm = get_llm_client()
     prompt_loader = get_prompt_loader()
     conversation_history = "(No previous conversation)"
     previous_recipes = []
@@ -35,21 +37,22 @@ async def analyze_conversation_context(
                     previous_recipes.extend(msg["recipes"])
             conversation_history = "\n".join(history_lines)
 
-    context_config = prompt_loader.get_llm_prompt("context_understanding")
-    system_prompt = "\n".join(context_config.get("system", []))
-    user_template = "\n".join(context_config.get("user_template", []))
-
-    user_prompt = prompt_loader.format_prompt(
-        user_template,
-        conversation_history=conversation_history,
-        user_message=message,
+    # Get LangChain PromptTemplate from loader
+    prompt = prompt_loader.get_prompt_template("context_understanding", type="llm")
+    
+    settings = get_settings()
+    llm = ChatOllama(
+        base_url=settings.llm_base_url,
+        model=settings.llm_model,
+        temperature=0.1
     )
-
-    response = await llm.chat(
-        messages=[{"role": "user", "content": user_prompt}],
-        temperature=0.1,
-        system=system_prompt,
-    )
+    
+    chain = prompt | llm | StrOutputParser()
+    
+    response = await chain.ainvoke({
+        "conversation_history": conversation_history,
+        "user_message": message
+    })
 
     try:
         cleaned_response = response.strip()
@@ -90,6 +93,7 @@ async def analyze_conversation_context(
         logger.debug(f"Raw response was: {response[:200]}")
 
     message_lower = message.lower()
+
     menu_modification_words = ["change", "replace", "swap", "modify", "remove", "update"]
     day_words = [
         "monday",
@@ -185,25 +189,22 @@ async def detect_user_intent_with_llm(
     image_context = "Note: User has attached an image." if image_present else ""
 
     # Use new structured intent classification
-    intent_config = prompt_loader.get_llm_prompt("intent_classification_json")
-    system_prompt = "\n".join(intent_config.get("system", []))
-    user_template = "\n".join(intent_config.get("user_template", []))
-
-    user_prompt = prompt_loader.format_prompt(
-        user_template,
-        history_context=history_context,
-        image_context=image_context,
-        user_message=message,
+    prompt = prompt_loader.get_prompt_template("intent_classification_json", type="llm")
+    
+    settings = get_settings()
+    llm = ChatOllama(
+        base_url=settings.llm_base_url,
+        model=settings.llm_model,
+        temperature=0.1
     )
-
-    logger.debug(f"[Intent Detection] Prompt:\n{user_prompt}")
-
-    llm = get_llm_client()
-    response = await llm.chat(
-        messages=[{"role": "user", "content": user_prompt}],
-        temperature=0.1,
-        system=system_prompt,
-    )
+    
+    chain = prompt | llm | StrOutputParser()
+    
+    response = await chain.ainvoke({
+        "history_context": history_context,
+        "image_context": image_context,
+        "user_message": message
+    })
 
     logger.debug(f"[Intent Detection] Raw LLM Response:\n{response}")
 

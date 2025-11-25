@@ -1,12 +1,12 @@
 """
 RAG service for recipe recommendations.
 Full RAG pipeline: ChromaDB for semantic search + SQLite (via SQLAlchemy) for complete recipe context.
+Uses LangChain for LLM interaction and chain management.
 """
 from typing import List, Dict, Any, Optional
 import logging
 from sqlalchemy.orm import Session
 from app.services.recipe_vectorstore import get_vector_store
-from app.core.llm_client import get_llm_client
 from app.core.config import get_settings
 from app.core.constants import LimitsConstants
 from app.utils.prompt_loader import get_prompt_loader
@@ -16,11 +16,17 @@ from app.utils.json_parser import parse_llm_json
 import json
 import random
 
+# LangChain imports
+from langchain_ollama import ChatOllama
+from langchain_core.prompts import PromptTemplate
+from langchain_core.output_parsers import StrOutputParser
+from langchain_core.runnables import RunnablePassthrough
+
 logger = logging.getLogger(__name__)
 
 
 class RecipeRAGService:
-    """Service for RAG-based recipe recommendations."""
+    """Service for RAG-based recipe recommendations using LangChain."""
     
     def __init__(self):
         """Initialize the RAG service with vector store and LLM."""
@@ -32,8 +38,12 @@ class RecipeRAGService:
             embedding_model=self.settings.embedding_model
         )
         
-        # Initialize shared LLM client
-        self.llm_client = get_llm_client()
+        # Initialize LangChain ChatOllama
+        self.llm = ChatOllama(
+            base_url=self.settings.llm_base_url,
+            model=self.settings.llm_model,
+            temperature=0.1
+        )
         
         # Initialize prompt loader
         self.prompt_loader = get_prompt_loader()
@@ -93,23 +103,17 @@ class RecipeRAGService:
     
     async def transform_query(self, user_query: str) -> str:
         """
-        Transform conversational query into optimized search keywords.
+        Transform conversational query into optimized search keywords using LangChain.
         """
         try:
-            config = self.prompt_loader.get_llm_prompt("query_transformation")
-            system_prompt = "\n".join(config.get("system", []))
-            user_template = "\n".join(config.get("user_template", []))
+            # Get LangChain PromptTemplate from loader
+            prompt = self.prompt_loader.get_prompt_template("query_transformation", type="llm")
             
-            prompt = self.prompt_loader.format_prompt(
-                user_template,
-                user_query=user_query
-            )
+            # Create Chain
+            chain = prompt | self.llm | StrOutputParser()
             
-            optimized_query = await self.llm_client.chat(
-                messages=[{"role": "user", "content": prompt}],
-                temperature=0.1,
-                system=system_prompt
-            )
+            # Invoke Chain
+            optimized_query = await chain.ainvoke({"user_query": user_query})
             
             logger.info(f"Query transformation: '{user_query}' -> '{optimized_query}'")
             return optimized_query.strip()
@@ -119,23 +123,17 @@ class RecipeRAGService:
 
     async def extract_constraints(self, user_query: str) -> Dict[str, Any]:
         """
-        Extract constraints from user query using LLM.
+        Extract constraints from user query using LangChain.
         """
         try:
-            config = self.prompt_loader.get_llm_prompt("recipe_constraint_parser")
-            system_prompt = "\n".join(config.get("system", []))
-            user_template = "\n".join(config.get("user_template", []))
+            # Get LangChain PromptTemplate from loader
+            prompt = self.prompt_loader.get_prompt_template("recipe_constraint_parser", type="llm")
             
-            prompt = self.prompt_loader.format_prompt(
-                user_template,
-                user_query=user_query
-            )
+            # Create Chain
+            chain = prompt | self.llm | StrOutputParser()
             
-            response = await self.llm_client.chat(
-                messages=[{"role": "user", "content": prompt}],
-                temperature=0.1,
-                system=system_prompt
-            )
+            # Invoke Chain
+            response = await chain.ainvoke({"user_query": user_query})
             
             return parse_llm_json(response, fallback={
                 "dietary": [],
@@ -153,7 +151,7 @@ class RecipeRAGService:
 
     async def rerank_results(self, user_query: str, recipes: List[Dict]) -> List[Dict]:
         """
-        Re-rank recipes based on relevance to user query using LLM.
+        Re-rank recipes based on relevance to user query using LangChain.
         """
         if not recipes:
             return []
@@ -169,21 +167,17 @@ class RecipeRAGService:
                     "ingredients": [i["name"] for i in r.get("ingredients", [])[:5]]
                 })
             
-            config = self.prompt_loader.get_llm_prompt("recipe_reranking")
-            system_prompt = "\n".join(config.get("system", []))
-            user_template = "\n".join(config.get("user_template", []))
+            # Get LangChain PromptTemplate from loader
+            prompt = self.prompt_loader.get_prompt_template("recipe_reranking", type="llm")
             
-            prompt = self.prompt_loader.format_prompt(
-                user_template,
-                recipes_json=json.dumps(candidates),
-                user_query=user_query
-            )
+            # Create Chain
+            chain = prompt | self.llm | StrOutputParser()
             
-            response = await self.llm_client.chat(
-                messages=[{"role": "user", "content": prompt}],
-                temperature=0.1,
-                system=system_prompt
-            )
+            # Invoke Chain
+            response = await chain.ainvoke({
+                "recipes_json": json.dumps(candidates),
+                "user_query": user_query
+            })
             
             rankings = parse_llm_json(response)
             if not isinstance(rankings, list):
@@ -420,23 +414,7 @@ class RecipeRAGService:
         excluded_ingredients: Optional[List[str]] = None
     ) -> Dict[str, Any]:
         """
-        Use LLM to generate personalized recommendations with FULL recipe context.
-        
-        Args:
-            user_query: User's original query
-            recipes: Retrieved recipes WITH full ingredients and steps
-            dietary_restrictions: User's dietary restrictions
-            max_calories: Maximum calorie constraint
-            metadata_filter: Optional metadata filter (e.g., {"time": {"$lte": 30}})
-            system_instruction: Optional instruction for the LLM (e.g. about result limits)
-            min_protein: Minimum protein constraint
-            max_carbs: Maximum carbs constraint
-            max_fat: Maximum fat constraint
-            included_ingredients: Ingredients to include
-            excluded_ingredients: Ingredients to exclude
-            
-        Returns:
-            Recommendations with explanations
+        Use LLM to generate personalized recommendations with FULL recipe context using LangChain.
         """
         # Build rich context with full recipe details
         recipes_context = []
@@ -500,37 +478,27 @@ class RecipeRAGService:
         
         constraints_text = "\n".join(constraints) if constraints else "No specific constraints"
         
-        # Create prompt for LLM with full context
-        prompt = f"""I have retrieved the following recipes based on the user's request. Each recipe includes full ingredients and cooking steps.
-
-User's request: "{user_query}"
-{f"System Note: {system_instruction}" if system_instruction else ""}
-
-Constraints:
-{constraints_text}
-
-Retrieved Recipes:
-
-{chr(10).join(['-' * 80 + chr(10) + rc for rc in recipes_context])}
-
-{'-' * 80}
-
-Based on these recipes with their full ingredients and cooking methods, provide a helpful, conversational recommendation. Explain:
-1. Why these recipes match the user's request
-2. Highlight key ingredients or cooking techniques
-3. Suggest which recipe(s) might be best and why
-4. Any tips for customization based on the user's needs
-
-Keep your response friendly and concise (2-3 paragraphs)."""
-
         # Get LLM response
         try:
-            response = await self.llm_client.chat(
-                messages=[{"role": "user", "content": prompt}],
+            # Get LangChain PromptTemplate from loader
+            prompt = self.prompt_loader.get_prompt_template("recipe_recommendations", type="rag")
+            
+            # Create Chain
+            # Use a higher temperature for creative recommendations
+            creative_llm = ChatOllama(
+                base_url=self.settings.llm_base_url,
+                model=self.settings.llm_model,
                 temperature=0.7
             )
+            chain = prompt | creative_llm | StrOutputParser()
             
-            explanation = response
+            # Invoke Chain
+            explanation = await chain.ainvoke({
+                "user_query": user_query,
+                "system_instruction": f"System Note: {system_instruction}" if system_instruction else "",
+                "constraints_text": constraints_text,
+                "recipes_context": chr(10).join(['-' * 80 + chr(10) + rc for rc in recipes_context])
+            })
             
         except Exception as e:
             logger.error(f"LLM generation failed: {e}")

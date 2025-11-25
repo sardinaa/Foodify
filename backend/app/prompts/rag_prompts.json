@@ -2,6 +2,7 @@
   "recipe_recommendations": {
     "template": [
       "You are a helpful cooking assistant. A user is looking for recipe recommendations.",
+      "{system_instruction}",
       "",
       "User's request: \"{user_query}\"",
       "",
